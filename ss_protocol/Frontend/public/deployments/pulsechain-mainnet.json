@@ -1,0 +1,28 @@
+{
+  "chainId": 369,
+  "contracts": {
+    "core": {
+      "SWAP_V3": "0xb11F88c87C6F38006D127268e528Ad2FfC09740B",
+      "STATE_V3": "0x3730863BBf398ec8A866f0BB2f2ea505F0FaE4CA",
+      "DAV_V3": "0xc2f7D2869A82cEbE50DD9220E8fFc12987B1Bf7A"
+    },
+    "support": {
+      "SwapLens": "0x2C0CBaA4621aEB9e38FdF2ACf8BB1B1C45b12DF4",
+      "AuctionMetrics": "0x0406435d7bff6630Fe18883a9c620e849Be5a446",
+      "BuyAndBurnController": "0xA1AaBEd2c9D173CC2c25311519d199B4FCa30999"
+    },
+    "stages": {
+      "AirdropDistributor": "0xe02377CF0ceDd538ec33Af9984A136a649F7A338",
+      "BoostedRedemption": "0xF3C11A05C0122D0f181481F00aae8a72A4c0ED40",
+      "ReverseBurnRedemption": "0xA005b57050f67C816457eBcb460D1c0AFDa2d80b"
+    },
+    "utilities": {
+      "LPHelper": "0x5CbDC89F62608a242FF740A52d91eFdB7AB09114"
+    }
+  },
+  "external": {
+    "PulseXRouter": "0x165C3410fC91EF562C50559f7d2289fEbed552d9",
+    "PulseXFactory": "0x29eA7545DEf87022BAdc76323F373EA1e707C523",
+    "WPLS": "0xA1077a294dDE1B09bB078844df40758a5D0f9a27"
+  }
+}

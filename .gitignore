@@ -1,0 +1,52 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+
+# Node / Frontend
+node_modules/
+.npm/
+.yarn/
+pnpm-lock.yaml
+# Vite/React build output
+ss_protocol/Frontend/dist/
+ss_protocol/Frontend/.vite/
+ss_protocol/Frontend/.cache/
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Editor/IDE
+.vscode/
+.idea/
+*.swp
+
+# Env files (if any)
+.env
+.env.*
+
+# Coverage
+coverage/
+
+# Foundry / Solidity
+# build artifacts and cache folders
+ss_protocol/state-contracts/out/
+ss_protocol/state-contracts/cache/
+# broadcast may include large JSON logs; keep it if you want history. Ignore per-network artifacts.
+ss_protocol/state-contracts/broadcast/*/run-*.json
+ss_protocol/state-contracts/broadcast/*/dry-run/
+
+# Anvil dumps
+anvil.*.json
+
+# Misc
+*.tgz
+*.zip
+*.tar

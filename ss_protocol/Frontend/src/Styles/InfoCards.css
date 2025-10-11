@@ -1,0 +1,360 @@
+.card {
+  border: 1px solid #ffffff26 !important;
+  min-height: 200px;
+}
+
+.cards {
+  flex: 1;
+  display: flex;
+}
+
+.carddetails {
+  padding: 5px 15px;
+  width: 50%;
+
+  /* border-right: 1px solid green;  */
+}
+.carddetails2 {
+  padding: 5px 15px;
+  width: 100%;
+}
+/* .carddetails:first-child{
+    border-right: 1px solid #fff; 
+} */
+
+.detailText {
+  font-size: small;
+  text-transform: uppercase;
+  font-weight: 700;
+  opacity: 0.5;
+}
+.detailText2 {
+  font-size: 14px;
+  font-weight: 700;
+  opacity: 0.5;
+}
+
+.detailAmount {
+  font-weight: 700;
+  font-size: 10px;
+}
+
+.detailSmall {
+  font-size: 14px;
+  font-weight: 600;
+  color: green;
+}
+
+.cardInput {
+  height: 24px;
+  font-size: 14px;
+}
+
+.detailfooter {
+  padding: 10px 10px 0px 15px;
+  font-size: small;
+}
+
+.greenText {
+  color: green;
+}
+
+.btn-primary {
+  background-color: #ff4081; /* Primary button color */
+  border: none;
+  font-weight: 600;
+  transition: background-color 0.3s ease;
+}
+
+.btn-primary:hover {
+  background-color: #ff79a7; /* Lighter pink on hover */
+}
+
+.uppercase {
+  text-transform: uppercase;
+}
+
+.border-bottom {
+  border-bottom: 1px solid #ffffff26 !important;
+}
+
+.announcement {
+  background-color: #212529;
+  color: #fff;
+  border: 1px solid #ffffff26;
+  border-radius: 10px;
+  padding: 1rem 1.5rem;
+  font-size: 1rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  transition: background-color 0.3s ease;
+}
+
+.announcement span {
+  color: #ff4081;
+}
+
+.announcement span:first-child {
+  margin-right: 50px;
+}
+
+.announcement:hover {
+  background-color: #1c1e22;
+}
+
+@media (max-width: 768px) {
+  .cards {
+    flex: 0 0 100%;
+    max-width: 95%;
+  }
+
+  .announcement span:first-child {
+    margin-right: 0px;
+  }
+}
+
+@keyframes marquee {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+.animate-marquee {
+  display: flex;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.marquee-inner {
+  display: flex;
+  animation: marquee 30s linear infinite;
+}
+
+.marquee-content {
+  padding-right: 100px; /* Adjust for spacing */
+}
+
+.rieva-token-image {
+  width: 25px;
+  height: 25px;
+  transition: transform 0.3s ease, border 0.3s ease;
+}
+
+.rieva-token-image:hover {
+  transform: scale(2);
+  z-index: 999; /* Ensure it's above everything */
+}
+
+.floating-input-container {
+  position: relative;
+  width: 100%;
+  max-width: 300px;
+}
+
+.floating-label {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 14px;
+  color: white;
+  transition: all 0.2s ease;
+  pointer-events: none;
+  background: #212529;
+  padding: 0 4px;
+}
+
+.form-control:focus + .floating-label,
+.form-control.filled + .floating-label {
+  top: 0;
+  font-size: 12px;
+  color: #ffffff;
+}
+
+.form-control {
+  background-color: #212529;
+  border: 1px solid #6c757d;
+  color: #ffffff;
+  caret-color: #ffffff; /* Ensure blinking cursor is visible and white */
+}
+
+.form-control:focus {
+  background-color: #212529;
+  border-color: #ffffff;
+  box-shadow: none;
+  color: #ffffff;
+  outline: none; /* Remove default outline */
+}
+
+.form-control::placeholder {
+  color: transparent; /* Hide default placeholder */
+}
+.form-control::placeholder {
+  color: var(
+    --placeholder-color,
+    transparent
+  ); /* Use custom property with fallback */
+}
+.form-control.filled:disabled {
+  background-color: #6c757d; /* light neutral gray, not white */
+  border-color: #dee2e6; /* lighter border */
+  cursor: not-allowed;
+}
+.form-control:disabled::placeholder {
+  color: #adb5bd;
+  opacity: 5; /* ensure it's visible */
+}
+.form-control.filled:disabled {
+  color: #212529;
+}
+.tx-progress-container {
+  width: 100%;
+  max-width: 320px;
+  margin: 0 auto;
+  text-align: center;
+  padding: 16px 0;
+}
+
+.step-line {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  position: relative;
+  gap: 12px; 
+  background: linear-gradient(to right, #d1d5db 0%, #d1d5db 100%);
+  height: 2px;
+  margin: 0 6px; /* Half the dot width to align edges */
+}
+
+.step {
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* Background fill for active steps */
+.step-line::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  background: #22c55e;
+  transition: width 0.3s ease;
+}
+
+/* Adjust width of the active line based on the active step */
+.step-line:has(.step:nth-child(1).active)::before {
+  width: 0%;
+}
+
+.step-line:has(.step:nth-child(2).active)::before {
+  width: 25%;
+}
+
+.step-line:has(.step:nth-child(3).active)::before {
+  width: 50%;
+}
+
+.step-line:has(.step:nth-child(4).active)::before {
+  width: 75%;
+}
+
+.step-line:has(.step:nth-child(5).active)::before {
+  width: 100%;
+}
+
+@keyframes shimmer {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(200%);
+  }
+}
+/* Dot */
+.step .dot {
+  width: 12px;
+  height: 12px;
+  background-color: #ffffff;
+  border: 2px solid #22c55e;
+  border-radius: 50%;
+  position: relative;
+  top: -5px; /* Align dot center with the line */
+  transition: background 0.3s ease, border-color 0.3s ease, transform 0.3s ease,
+    box-shadow 0.3s ease;
+}
+
+/* Active Dot */
+.step.active .dot {
+  background: linear-gradient(145deg, #22c55e, #16a34a);
+  border-color: #22c55e;
+  transform: scale(1.2);
+  box-shadow: 0 0 8px rgba(34, 197, 94, 0.6), 0 2px 4px rgba(0, 0, 0, 0.2);
+  animation: blink 1s infinite ease-in-out;
+}
+
+/* Label */
+.label {
+  margin-top: 6px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: #ffffff;
+  transition: color 0.3s ease;
+}
+
+.step.active .label {
+  color: #22c55e;
+}
+
+/* Blinking Animation */
+@keyframes blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+.info-logo {
+  background-color: transparent !important;
+  width: 25px;
+  height: 25px;
+  cursor: pointer;
+  margin-left: 18px;
+  border-radius: 20%;
+}
+
+.swap-amount-input:disabled {
+  background-color: #212529 !important;
+  color: #fff !important;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #666;
+  border-radius: 3px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #888;
+}
+
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #666 transparent;
+}

@@ -1,0 +1,52 @@
+{
+  "chainId": 369,
+  "networkName": "PulseChain Mainnet",
+  "rpc": "https://rpc.pulsechain.com",
+  "blockExplorer": "https://scan.pulsechain.com",
+  "deploymentBlocks": "REPLACE_WITH_ACTUAL_BLOCKS",
+  "deploymentTimestamp": "REPLACE_WITH_ACTUAL_TIMESTAMP",
+  "deployer": "REPLACE_WITH_DEPLOYER_ADDRESS",
+  "governance": "REPLACE_WITH_GOVERNANCE_ADDRESS",
+  "totalGasUsed": 0,
+  "totalCostPLS": 0,
+  "contracts": {
+    "core": {
+      "SWAP_V3": "REPLACE_WITH_SWAP_ADDRESS",
+      "STATE_V3": "REPLACE_WITH_STATE_ADDRESS",
+      "DAV_V3": "REPLACE_WITH_DAV_ADDRESS"
+    },
+    "support": {
+      "SwapLens": "REPLACE_WITH_SWAPLENS_ADDRESS",
+      "AuctionMetrics": "REPLACE_WITH_AUCTIONMETRICS_ADDRESS",
+      "BuyAndBurnController": "REPLACE_WITH_BUYANDBURN_ADDRESS"
+    },
+    "stages": {
+      "AirdropDistributor": "REPLACE_WITH_AIRDROP_ADDRESS",
+      "AuctionAdmin": "REPLACE_WITH_AUCTIONADMIN_ADDRESS"
+    },
+    "utilities": {
+      "LPHelper": "REPLACE_WITH_LPHELPER_ADDRESS"
+    }
+  },
+  "external": {
+    "PulseXRouter": "0x98bf93ebf5c380C0e6Ae8e192A7e2AE08edAcc02",
+    "PulseXFactory": "0x1715a3E4A142d8b698131108995174F37aEBA10D",
+    "WPLS": "0xA1077a294dDE1B09bB078844df40758a5D0f9a27"
+  },
+  "tokens": {
+    "STATE_V3": {
+      "address": "REPLACE_WITH_STATE_ADDRESS",
+      "symbol": "pSTATE",
+      "name": "PulseState",
+      "decimals": 18,
+      "totalSupply": "100000000000000000000000000000000"
+    },
+    "DAV_V3": {
+      "address": "REPLACE_WITH_DAV_ADDRESS",
+      "symbol": "pDAV",
+      "name": "PulseDAV",
+      "decimals": 18,
+      "totalSupply": "2000000000000000000000"
+    }
+  }
+}

@@ -1,0 +1,290 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
+
+import "forge-std/Test.sol";
+import "../src/StateToken.sol";
+import "../src/DavToken.sol";
+import "../src/AuctionSwap.sol";
+import "../src/AirdropDistributor.sol";
+import "../src/Tokens.sol";
+
+contract AuctionTimeTest is Test {
+    STATE_V3 public state;
+    DAV_V3 public dav;
+    SWAP_V3 public swap;
+    AirdropDistributor public airdropDistributor;
+    TOKEN_V3 public testToken1;
+    TOKEN_V3 public testToken2;
+    
+    address public deployer;
+    address public user1;
+    address public user2;
+    
+    // Deployed contract addresses from fresh deployment
+    address constant STATE_ADDR = 0x20Dc424c5fa468CbB1c702308F0cC9c14DA2825C;
+    address constant DAV_ADDR = 0x4653251486a57f90Ee89F9f34E098b9218659b83;
+    address constant SWAP_ADDR = 0x89ec9355b1Bcc964e576211c8B011BD709083f8d;
+    address constant AIRDROP_ADDR = 0x72662E4da74278430123cE51405c1e7A1B87C294;
+    
+    function setUp() public {
+        // Use deployed contracts
+        state = STATE_V3(STATE_ADDR);
+        dav = DAV_V3(DAV_ADDR);
+        swap = SWAP_V3(SWAP_ADDR);
+        airdropDistributor = AirdropDistributor(AIRDROP_ADDR);
+        
+        // Set up test addresses
+        deployer = 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266;
+        user1 = address(0x1);
+        user2 = address(0x2);
+        
+        // Give users some ETH for gas
+        vm.deal(user1, 100 ether);
+        vm.deal(user2, 100 ether);
+        
+        console.log("=== AUCTION TIME TEST SETUP ===");
+        console.log("Using deployed contracts:");
+        console.log("STATE:", address(state));
+        console.log("DAV:", address(dav));
+        console.log("SWAP:", address(swap));
+        console.log("AirdropDistributor:", address(airdropDistributor));
+    }
+    
+    function testFullAuctionCycleWithTimeManipulation() public {
+        console.log("\n=== TESTING FULL AUCTION CYCLE WITH TIME MANIPULATION ===");
+        
+        // Step 1: Deploy test tokens for auctions
+        vm.startPrank(deployer);
+        testToken1 = new TOKEN_V3("Test Token 1", "TT1", deployer, 1000000 * 1e18);
+        testToken2 = new TOKEN_V3("Test Token 2", "TT2", deployer, 1000000 * 1e18);
+        
+        console.log("Test Token 1 deployed:", address(testToken1));
+        console.log("Test Token 2 deployed:", address(testToken2));
+        
+        // Transfer some tokens to SWAP for auction rewards
+        testToken1.transfer(address(swap), 100000 * 1e18);
+        testToken2.transfer(address(swap), 100000 * 1e18);
+        
+        // Register tokens for auctions
+        swap.registerToken(address(testToken1));
+        swap.registerToken(address(testToken2));
+        
+        // Give users some DAV for airdrop claims
+        dav.transfer(user1, 10 * 1e18); // 10 DAV
+        dav.transfer(user2, 15 * 1e18); // 15 DAV
+        vm.stopPrank();
+        
+        console.log("Initial setup complete");
+        console.log("User1 DAV balance:", dav.balanceOf(user1) / 1e18);
+        console.log("User2 DAV balance:", dav.balanceOf(user2) / 1e18);
+        
+        // Step 2: Test auction cycle over multiple days
+        testMultipleDaysWithTimeWarp();
+    }
+    
+    function testMultipleDaysWithTimeWarp() internal {
+        console.log("\n--- Testing Multiple Auction Days with Time Warp ---");
+        
+        uint256 initialTime = block.timestamp;
+        uint256 dayInterval = 24 * 60 * 60; // 1 day in seconds
+        
+        for (uint256 day = 0; day < 5; day++) {
+            console.log(string.concat("\n=== DAY ", vm.toString(day + 1), " ==="));
+            
+            // Warp to next auction day
+            if (day > 0) {
+                vm.warp(block.timestamp + dayInterval + 1);
+                vm.roll(block.number + 1);
+                console.log("Warped time forward by", dayInterval + 1, "seconds");
+                console.log("Current timestamp:", block.timestamp);
+                console.log("Current block number:", block.number);
+            }
+            
+            // Get today's auction info
+            (address todayToken, bool isActive) = swap.getTodayToken();
+            bool isReverse = swap.isReverseAuctionActive(todayToken);
+            
+            console.log("Today's token:", todayToken);
+            console.log("Auction active:", isActive);
+            console.log("Is reverse auction:", isReverse);
+            
+            if (isActive && todayToken != address(0)) {
+                if (isReverse) {
+                    testReverseAuction(todayToken, day);
+                } else {
+                    testNormalAuction(todayToken, day);
+                }
+            } else {
+                console.log("No active auction today, continuing...");
+            }
+            
+            // Advance time by a few hours within the day
+            vm.warp(block.timestamp + 6 * 60 * 60); // +6 hours
+            vm.roll(block.number + 100);
+        }
+    }
+    
+    function testNormalAuction(address tokenAddress, uint256 day) internal {
+        console.log("--- Testing Normal Auction ---");
+        
+        address currentUser = (day % 2 == 0) ? user1 : user2;
+        console.log("Current user:", currentUser);
+        
+        vm.startPrank(currentUser);
+        
+        uint256 davBalance = dav.balanceOf(currentUser);
+        console.log("User DAV balance:", davBalance / 1e18);
+        
+        if (davBalance >= 1e18) { // At least 1 DAV
+            // Step 1: Claim airdrop
+            uint256 davUnits = 1; // Claim for 1 DAV unit
+            uint256 initialTokenBalance = TOKEN_V3(tokenAddress).balanceOf(currentUser);
+            
+            try airdropDistributor.claim(davUnits) {
+                console.log("SUCCESS Step 1: Airdrop claimed for", davUnits, "DAV units");
+                uint256 newTokenBalance = TOKEN_V3(tokenAddress).balanceOf(currentUser);
+                console.log("Tokens received from airdrop:", (newTokenBalance - initialTokenBalance) / 1e18);
+            } catch {
+                console.log("FAILED Step 1: Could not claim airdrop");
+                vm.stopPrank();
+                return;
+            }
+            
+            // Small time advance before Step 2
+            vm.warp(block.timestamp + 60); // +1 minute
+            vm.roll(block.number + 1);
+            
+            // Step 2: Burn tokens for STATE
+            uint256 tokenBalance = TOKEN_V3(tokenAddress).balanceOf(currentUser);
+            console.log("Token balance before burn:", tokenBalance / 1e18);
+            
+            if (tokenBalance >= 3000 * 1e18) {
+                uint256 burnAmount = 3000 * 1e18;
+                TOKEN_V3(tokenAddress).approve(address(swap), burnAmount);
+                
+                uint256 initialStateBalance = state.balanceOf(currentUser);
+                
+                try swap.burnTokensForState(tokenAddress, davUnits) {
+                    console.log("SUCCESS Step 2: Burned", burnAmount / 1e18, "tokens for STATE");
+                    uint256 newStateBalance = state.balanceOf(currentUser);
+                    console.log("STATE received:", (newStateBalance - initialStateBalance) / 1e18);
+                } catch Error(string memory reason) {
+                    console.log("FAILED Step 2:", reason);
+                }
+            }
+            
+            // Small time advance before Step 3
+            vm.warp(block.timestamp + 60); // +1 minute
+            vm.roll(block.number + 1);
+            
+            // Step 3: Swap STATE for tokens
+            uint256 stateBalance = state.balanceOf(currentUser);
+            console.log("STATE balance before swap:", stateBalance / 1e18);
+            
+            if (stateBalance >= 1000 * 1e18) {
+                uint256 swapAmount = 1000 * 1e18;
+                state.approve(address(swap), swapAmount);
+                
+                uint256 initialTokenBalance2 = TOKEN_V3(tokenAddress).balanceOf(currentUser);
+                
+                try swap.swapTokens(tokenAddress, swapAmount) {
+                    console.log("SUCCESS Step 3: Swapped", swapAmount / 1e18, "STATE for tokens");
+                    uint256 newTokenBalance2 = TOKEN_V3(tokenAddress).balanceOf(currentUser);
+                    console.log("Tokens received from swap:", (newTokenBalance2 - initialTokenBalance2) / 1e18);
+                } catch Error(string memory reason) {
+                    console.log("FAILED Step 3:", reason);
+                }
+            }
+        }
+        
+        vm.stopPrank();
+        console.log("Normal auction test completed for day", day + 1);
+    }
+    
+    function testReverseAuction(address tokenAddress, uint256 day) internal {
+        console.log("--- Testing Reverse Auction ---");
+        
+        address currentUser = (day % 2 == 0) ? user1 : user2;
+        console.log("Current user:", currentUser);
+        
+        vm.startPrank(currentUser);
+        
+        // For reverse auction, user needs tokens first
+        uint256 tokenBalance = TOKEN_V3(tokenAddress).balanceOf(currentUser);
+        console.log("User token balance:", tokenBalance / 1e18);
+        
+        if (tokenBalance >= 1000 * 1e18) {
+            uint256 swapAmount = 1000 * 1e18;
+            TOKEN_V3(tokenAddress).approve(address(swap), swapAmount);
+            
+            uint256 initialStateBalance = state.balanceOf(currentUser);
+            
+            try swap.reverseSwapTokensForState(tokenAddress, swapAmount) {
+                console.log("SUCCESS Reverse Step 1: Swapped", swapAmount / 1e18, "tokens for STATE");
+                uint256 newStateBalance = state.balanceOf(currentUser);
+                console.log("STATE received:", (newStateBalance - initialStateBalance) / 1e18);
+                
+                // Small time advance
+                vm.warp(block.timestamp + 60);
+                vm.roll(block.number + 1);
+                
+                // Burn STATE for tokens
+                uint256 stateBalance = state.balanceOf(currentUser);
+                if (stateBalance >= 500 * 1e18) {
+                    uint256 burnAmount = 500 * 1e18;
+                    state.approve(address(swap), burnAmount);
+                    
+                    uint256 initialTokenBalance2 = TOKEN_V3(tokenAddress).balanceOf(currentUser);
+                    
+                    try swap.burnStateForTokens(tokenAddress, burnAmount) {
+                        console.log("SUCCESS Reverse Step 2: Burned", burnAmount / 1e18, "STATE for tokens");
+                        uint256 newTokenBalance2 = TOKEN_V3(tokenAddress).balanceOf(currentUser);
+                        console.log("Tokens received:", (newTokenBalance2 - initialTokenBalance2) / 1e18);
+                    } catch Error(string memory reason) {
+                        console.log("FAILED Reverse Step 2:", reason);
+                    }
+                }
+            } catch Error(string memory reason) {
+                console.log("FAILED Reverse Step 1:", reason);
+            }
+        } else {
+            console.log("FAILED User needs tokens for reverse auction");
+        }
+        
+        vm.stopPrank();
+        console.log("Reverse auction test completed for day", day + 1);
+    }
+    
+    function testTimeWarpEffects() public {
+        console.log("\n=== TESTING TIME WARP EFFECTS ===");
+        
+        uint256 initialTime = block.timestamp;
+        uint256 initialBlock = block.number;
+        
+        console.log("Initial timestamp:", initialTime);
+        console.log("Initial block number:", initialBlock);
+        
+        // Test small time jump
+        vm.warp(block.timestamp + 3600); // +1 hour
+        vm.roll(block.number + 60);
+        
+        console.log("After 1 hour warp:");
+        console.log("New timestamp:", block.timestamp);
+        console.log("New block number:", block.number);
+        console.log("Time difference:", block.timestamp - initialTime);
+        
+        // Test large time jump
+        vm.warp(block.timestamp + 7 * 24 * 60 * 60); // +1 week
+        vm.roll(block.number + 10000);
+        
+        console.log("After 1 week warp:");
+        console.log("New timestamp:", block.timestamp);
+        console.log("New block number:", block.number);
+        console.log("Total time difference:", block.timestamp - initialTime);
+        
+        // Check auction state after time warp
+        (address todayToken, bool isActive) = swap.getTodayToken();
+        console.log("Token after time warp:", todayToken);
+        console.log("Active after time warp:", isActive);
+    }
+}

@@ -1,0 +1,71 @@
+{
+  "network": {
+    "chainId": 369,
+    "name": "PulseChain Mainnet",
+    "rpcUrl": "https://rpc.pulsechain.com",
+    "explorerUrl": "https://scan.pulsechain.com"
+  },
+  "contracts": {
+    "core": {
+      "SWAP_V3": {
+        "address": "0xb11F88c87C6F38006D127268e528Ad2FfC09740B"
+      },
+      "STATE_V3": {
+        "address": "0x3730863BBf398ec8A866f0BB2f2ea505F0FaE4CA",
+        "name": "pSTATE",
+        "symbol": "pSTATE",
+        "decimals": 18
+      },
+      "DAV_V3": {
+        "address": "0xc2f7D2869A82cEbE50DD9220E8fFc12987B1Bf7A",
+        "name": "pDAV",
+        "symbol": "pDAV",
+        "decimals": 18
+      }
+    },
+    "lens": {
+      "SwapLens": {
+        "address": "0x2C0CBaA4621aEB9e38FdF2ACf8BB1B1C45b12DF4"
+      }
+    },
+    "metrics": {
+      "AuctionMetrics": {
+        "address": "0x0406435d7bff6630Fe18883a9c620e849Be5a446"
+      }
+    },
+    "controllers": {
+      "BuyAndBurnController": {
+        "address": "0xA1AaBEd2c9D173CC2c25311519d199B4FCa30999"
+      }
+    },
+    "distributors": {
+      "AirdropDistributor": {
+        "address": "0xe02377CF0ceDd538ec33Af9984A136a649F7A338"
+      },
+      "BoostedRedemption": {
+        "address": "0xF3C11A05C0122D0f181481F00aae8a72A4c0ED40"
+      },
+      "ReverseBurnRedemption": {
+        "address": "0xA005b57050f67C816457eBcb460D1c0AFDa2d80b"
+      }
+    },
+    "helpers": {
+      "LPHelper": {
+        "address": "0x5CbDC89F62608a242FF740A52d91eFdB7AB09114"
+      }
+    }
+  },
+  "dex": {
+    "router": {
+      "address": "0x165C3410fC91EF562C50559f7d2289fEbed552d9"
+    },
+    "factory": {
+      "address": "0x29eA7545DEf87022BAdc76323F373EA1e707C523"
+    },
+    "baseToken": {
+      "address": "0xA1077a294dDE1B09bB078844df40758a5D0f9a27",
+      "symbol": "WPLS",
+      "decimals": 18
+    }
+  }
+}

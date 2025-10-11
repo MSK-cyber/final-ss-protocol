@@ -1,0 +1,68 @@
+{
+  "chainId": 369,
+  "networkName": "PulseChain Mainnet",
+  "rpc": "https://rpc.pulsechain.com",
+  "blockExplorer": "https://scan.pulsechain.com",
+  "deploymentBlocks": "24720898-24720925",
+  "deploymentTimestamp": 1759967205,
+  "deployer": "0xF4579FA5Aca398FfeeB3eD1298104d226Ef84ebd",
+  "governance": "0xF4579FA5Aca398FfeeB3eD1298104d226Ef84ebd",
+  "development": "0x91Bd0000565f89DBf2D2D28c57db3E5c56873A77",
+  "totalGasUsed": 22373477,
+  "totalCostPLS": 16661.974354690365606,
+  "configuration": {
+    "auctionCycle": "15 minutes",
+    "walletLimit": 5000,
+    "airdropPerDav": 10000,
+    "davTokenSupply": "10 Million",
+    "auctionDuration": "15 minutes",
+    "davExpiration": "2 days",
+    "davCost": "500 PLS",
+    "minDavRequired": "1 DAV",
+    "stateTokenSupply": "100 Trillion",
+    "listedTokenSupply": "5 Billion",
+    "stateGovernanceShare": "5%",
+    "tokenGovernanceShare": "1%",
+    "auctionStartTime": "Pakistan 6 AM"
+  },
+  "contracts": {
+    "core": {
+      "SWAP_V3": "0x3Dbb5A59777648E5a2eC0065a175d5461A533779",
+      "STATE_V3": "0x98517EDB4b811D5d42EaF59B3e2caf353CCdfbCE",
+      "DAV_V3": "0xcFF959214C200733243E2b19E9D9ab2df22589d4"
+    },
+    "support": {
+      "SwapLens": "0x44d00C98251231dE36E57d200edD32C832027B79",
+      "AuctionMetrics": "0xa309168C3Ea046305cCf453B1b8470319DF70780",
+      "BuyAndBurnController": "0x85b7F966aF10aee29a496A16dF114197a4727A92"
+    },
+    "stages": {
+      "AirdropDistributor": "0xc387a19A799dd7654a6b82B661Dc9B19BB23FAAa",
+      "AuctionAdmin": "0x3Fe9F3FfBD422Ef3CE4C68592023AB84661AD42F"
+    },
+    "utilities": {
+      "LPHelper": "0x31B7420542e7429C2251911f1Ee3b898ef82d59E"
+    }
+  },
+  "external": {
+    "PulseXRouter": "0x98bf93ebf5c380C0e6Ae8e192A7e2AE08edAcc02",
+    "PulseXFactory": "0x1715a3E4A142d8b698131108995174F37aEBA10D",
+    "WPLS": "0xA1077a294dDE1B09bB078844df40758a5D0f9a27"
+  },
+  "tokens": {
+    "STATE_V3": {
+      "address": "0x98517EDB4b811D5d42EaF59B3e2caf353CCdfbCE",
+      "symbol": "pSTATE",
+      "name": "PulseState",
+      "decimals": 18,
+      "totalSupply": "100000000000000000000000000000000"
+    },
+    "DAV_V3": {
+      "address": "0xcFF959214C200733243E2b19E9D9ab2df22589d4",
+      "symbol": "pDAV",
+      "name": "PulseDAV",
+      "decimals": 18,
+      "totalSupply": "2000000000000000000000"
+    }
+  }
+}

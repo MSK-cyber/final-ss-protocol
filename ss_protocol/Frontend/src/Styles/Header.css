@@ -1,0 +1,196 @@
+/* General Styles */
+
+@font-face {
+  font-family: "Satoshi";
+  src: url("../fonts/Satoshi-Regular.woff2") format("woff2"),
+    url("../fonts/Satoshi-Regular.woff") format("woff");
+  font-weight: 400;
+  font-style: normal;
+}
+.navbar {
+  background-color: #1e1e1e; /* Dark background */
+  min-height: 80px;
+  border-bottom: 2px solid #333333; /* Subtle border */
+  font-family: "Satoshi", sans-serif; /* Font style */
+  display: flex; /* Flexbox for alignment */
+  justify-content: center; /* Centers the content horizontally */
+  align-items: center; /* Centers the content vertically */
+}
+
+.navbar-brand {
+  font-size: 1.8rem;
+  /* padding: 0 5px; */
+  color: #ffffff !important; /* Light text color */
+  font-weight: 900;
+  letter-spacing: 1.2px;
+}
+
+/* 
+  .navbar-brand:hover{
+	color: #ff4081 !important;
+	transition: color 0.5s ease;
+  } */
+
+.navbar-nav .nav-link {
+  color: #ffffff; /* Light link color */
+  font-size: 1rem;
+  line-height: 1.5;
+  font-weight: 700;
+  padding: 1rem;
+  /* text-transform: uppercase; */
+  transition: color 0.3s ease;
+}
+
+.navbar-nav .nav-link:hover {
+  border-bottom: 1px solid #fff;
+  color: #ff4081 !important; /* Pink accent color */
+}
+
+.active-link {
+  border-bottom: 1px solid #fff;
+  color: #ff4081 !important;
+}
+
+.navbar-nav .btn-primary {
+  background-color: #ff4081; /* Primary button color */
+  border: none;
+  padding: 0.75rem 1.5rem;
+  font-size: 1rem;
+  font-weight: 600;
+  /* text-transform: uppercase; */
+  transition: background-color 0.3s ease;
+}
+
+.navbar-nav .btn-primary:hover {
+  background-color: #ff79a7; /* Lighter pink on hover */
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .navbar {
+    padding: 1rem;
+  }
+
+  .navbar-nav {
+    text-align: center;
+  }
+
+  .navbar-nav .nav-link {
+    margin-right: 0;
+    margin-bottom: 0.5rem;
+  }
+
+  .navbar-nav .btn-primary {
+    width: 100%;
+  }
+}
+
+.small-text {
+  font-size: 0.9rem;
+  /* Adjust size to your preference */
+}
+
+.small-text-logo {
+  font-size: 18px;
+}
+.uppercase {
+  text-transform: uppercase;
+}
+.green-dot {
+  position: absolute;
+  top: 5px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 10px;
+  height: 10px;
+  background-color: green;
+  border-radius: 50%;
+}
+
+.tooltip {
+  border-radius: 8px !important;
+  font-size: 12px !important;
+  padding: 4px !important;
+  opacity: 0;
+  transition: opacity 0.5s ease-in-out;
+}
+
+.tooltip-inner {
+  background-color: #ff4081 !important;
+  color: #fff !important;
+  border-radius: 4px;
+  padding: 8px 12px;
+  font-weight: bold;
+  text-align: center;
+}
+
+.tooltip .tooltip-arrow::before {
+  border-left-color: #ff4081 !important;
+}
+
+@keyframes pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(71, 226, 9, 0.7);
+  }
+  70% {
+    box-shadow: 0 0 10px 10px rgba(255, 64, 129, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 64, 129, 0);
+  }
+}
+
+.active-dot {
+  width: 10px;
+  height: 10px;
+  background-color: #28a745;
+  border-radius: 50%;
+  position: relative;
+  display: inline-block;
+  animation: pulse 1.5s infinite ease-in-out;
+  margin-left: 10px;
+}
+
+/* rotate up/down */
+.rotate-up .dropdown-arrow-icon {
+  transform: rotate(180deg);
+}
+
+.rotate-down .dropdown-arrow-icon {
+  transform: rotate(0deg);
+}
+
+/* Show dropdown on hover */
+.dropdown:hover .dropdown-menu {
+  display: block;
+}
+
+/* Custom dropdown width and style */
+.custom-dropdown-menu {
+  background-color: #212529;
+  border: none;
+  border-radius: 0.5rem;
+  padding: 0.25rem 0;
+  width: 120px; /* Smaller width */
+  min-width: auto;
+  font-size: 0.9rem;
+}
+
+.dropdown:hover .custom-dropdown-menu {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+/* Dropdown item hover */
+.dropdown-item:hover {
+  background-color: #343a40;
+  color: #ffffff;
+}
+
+/* Optional: Remove blue focus ring */
+.dropdown-item:focus {
+  background-color: #343a40;
+  color: #ffffff;
+  outline: none;
+}

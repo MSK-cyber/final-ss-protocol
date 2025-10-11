@@ -1,0 +1,47 @@
+{
+  "name": "state-dex-protocol-v4-integration",
+  "version": "4.0.0",
+  "description": "Frontend integration files for State DEX Protocol V4 on PulseChain v4 Testnet",
+  "main": "config.json",
+  "types": "types.ts",
+  "files": [
+    "pulsechain-testnet.json",
+    "config.json",
+    "abis.json",
+    "types.ts",
+    "INTEGRATION_GUIDE.md"
+  ],
+  "keywords": [
+    "state-dex",
+    "pulsechain",
+    "defi",
+    "dex",
+    "auction",
+    "ethereum",
+    "smart-contracts"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ebrahiemmohamed/ss_protocol.git",
+    "directory": "state-contracts/deployments"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "ethers": "^6.8.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.2.0",
+    "@types/node": "^20.0.0"
+  },
+  "peerDependencies": {
+    "react": ">=16.8.0",
+    "react-dom": ">=16.8.0"
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

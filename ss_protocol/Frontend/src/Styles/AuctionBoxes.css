@@ -1,0 +1,171 @@
+.auction-boxes {
+  margin-top: 0.4rem; /* slightly smaller spacing */
+  margin-bottom: 0.6rem; /* slightly smaller spacing */
+  color: #ffffff;
+  /* Use Bootstrap container defaults for width and horizontal alignment */
+}
+
+.auction-frame {
+  border: 1px solid #ffffff26; /* match .card border */
+  border-radius: 10px; /* match above boxes */
+  padding: 8px 10px; /* slightly smaller */
+  background: #212529; /* match card bg */
+}
+
+.auction-frame.reverse {
+  border-color: rgba(255, 64, 129, 0.3); /* subtle accent only */
+  background: #212529; /* keep consistent card bg */
+  border-radius: 10px; /* keep same rounding in reverse */
+}
+
+/* normal mode keeps base theme */
+
+.auction-boxes.reverse {
+  background: transparent; /* align with standard card sections */
+  border: none;
+  border-radius: 18px;
+  padding: 10px 12px; /* slightly smaller */
+}
+
+.auction-header {
+  font-size: 14px; /* slightly smaller */
+  font-weight: 600;
+  margin-bottom: 6px;
+  margin-left: 2px;
+}
+
+.auction-row {
+  display: flex;
+  align-items: center;
+  gap: 8px; /* a bit tighter */
+  margin: 6px 0; /* a bit tighter */
+  /* Match Mint card border style */
+  border: 1px solid #ffffff26;
+  border-radius: 10px;
+  background-color: #212529; /* match input/card background */
+  padding: 6px 8px; /* smaller */
+  min-height: 48px; /* slightly smaller height */
+  position: relative; /* for legend positioning */
+}
+
+/* smaller variant specifically for compact rows */
+.auction-row.small {
+  padding: 5px 8px;
+  min-height: 40px;
+}
+
+.auction-card {
+  background: transparent; /* inner content only, boundary is on row */
+  border: none;
+  color: #fff;
+  padding: 0; /* spacing handled by row */
+  border-radius: 10px;
+  width: 100%;
+  grid-column: 1 / 2;
+}
+
+.auction-card-title {
+  font-size: 19px; /* slightly smaller */
+  font-weight: 600;
+}
+
+/* Floating legend label inside box boundary */
+.row-legend {
+  position: absolute;
+  top: -9px; /* adjust for reduced padding */
+  left: 9px; /* adjust for reduced padding */
+  background-color: #212529; /* same as box background */
+  padding: 0 5px;
+  font-size: 12px; /* align closer to small */
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.6); /* closer to detailText opacity */
+  text-transform: uppercase;
+  border-radius: 6px;
+}
+
+.auction-card-sub {
+  /* Match Mint card text style */
+  font-size: small;
+  text-transform: uppercase;
+  font-weight: 700;
+  opacity: 0.5;
+}
+
+.auction-pill {
+  /* Use Bootstrap/InfoCards .btn-primary for colors */
+  border: none;
+  border-radius: 10px; /* match above boxes */
+  padding: 5px 12px; /* slightly smaller */
+  font-weight: 600;
+  /* Keep text on a single line and center it */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  /* Allow the button to expand for longer labels like "Ratio Swap" */
+  min-width: 110px;
+}
+
+/* Hover and disabled states inherit from .btn-primary */
+
+.auction-pill:disabled {
+  opacity: 0.65; /* match Bootstrap disabled button appearance */
+  pointer-events: none;
+}
+
+.auction-footer {
+  margin-top: 2px; /* tighter spacing */
+  gap: 6px;
+}
+
+/* Container that holds a bordered box plus an external action button */
+.auction-row-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 6px 0;
+}
+
+.auction-row-action {
+  display: flex;
+  justify-content: center;
+}
+
+/* Inline layout: box + button in one row */
+.auction-row-inline {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 10px;
+  margin: 6px 0;
+}
+
+@media (max-width: 767px) {
+  .auction-row-action {
+    justify-content: center;
+  }
+  .auction-row-action .auction-pill {
+    width: 100%;
+  }
+
+  .auction-row-inline {
+    grid-template-columns: 1fr; /* stack on small screens */
+  }
+}
+
+.footer-left {
+  flex: 0 0 auto;
+  min-width: 0; /* allow content to shrink */
+}
+
+/* Wider auction column on md+ screens */
+@media (min-width: 768px) {
+  .auction-row {
+    display: grid;
+    grid-template-columns: 1fr; /* only content inside the bordered box now */
+    align-items: center;
+    gap: 8px;
+    margin: 6px 0;
+  }
+
+}

@@ -1,0 +1,139 @@
+{
+  "network": {
+    "chainId": 369,
+    "name": "PulseChain Mainnet",
+    "rpcUrl": "https://rpc.pulsechain.com",
+    "explorerUrl": "https://scan.pulsechain.com",
+    "nativeCurrency": {
+      "name": "Pulse",
+      "symbol": "PLS",
+      "decimals": 18
+    }
+  },
+  "contracts": {
+    "core": {
+      "SWAP_V3": {
+        "address": "0xb11F88c87C6F38006D127268e528Ad2FfC09740B",
+        "deploymentBlock": 24676792,
+        "configured": true,
+        "description": "Main auction swap contract - handles token swapping and auction logic"
+      },
+      "STATE_V3": {
+        "address": "0x3730863BBf398ec8A866f0BB2f2ea505F0FaE4CA",
+        "deploymentBlock": 24676792,
+        "name": "pSTATE",
+        "symbol": "pSTATE",
+        "decimals": 18,
+        "totalSupply": "100000000000000000000000000000000",
+        "description": "Protocol governance and utility token"
+      },
+      "DAV_V3": {
+        "address": "0xc2f7D2869A82cEbE50DD9220E8fFc12987B1Bf7A",
+        "deploymentBlock": 24676792,
+        "name": "pDAV",
+        "symbol": "pDAV",
+        "decimals": 18,
+        "totalSupply": "2000000000000000000000",
+        "description": "Daily Auction Value token for liquidity rewards"
+      }
+    },
+    "lens": {
+      "SwapLens": {
+        "address": "0x2C0CBaA4621aEB9e38FdF2ACf8BB1B1C45b12DF4",
+        "deploymentBlock": 24676792,
+        "description": "Read-only contract for querying auction status and data"
+      }
+    },
+    "metrics": {
+      "AuctionMetrics": {
+        "address": "0x0406435d7bff6630Fe18883a9c620e849Be5a446",
+        "deploymentBlock": 24676792,
+        "description": "Tracks auction totals and metrics for buy-and-burn functionality"
+      }
+    },
+    "controllers": {
+      "BuyAndBurnController": {
+        "address": "0xA1AaBEd2c9D173CC2c25311519d199B4FCa30999",
+        "deploymentBlock": 24676792,
+        "description": "Manages protocol buy-and-burn operations"
+      }
+    },
+    "distributors": {
+      "AirdropDistributor": {
+        "address": "0xe02377CF0ceDd538ec33Af9984A136a649F7A338",
+        "deploymentBlock": 24676792,
+        "description": "Handles airdrop distribution logic"
+      },
+      "BoostedRedemption": {
+        "address": "0xF3C11A05C0122D0f181481F00aae8a72A4c0ED40",
+        "deploymentBlock": 24676792,
+        "description": "Enhanced redemption mechanism for DAV holders"
+      },
+      "ReverseBurnRedemption": {
+        "address": "0xA005b57050f67C816457eBcb460D1c0AFDa2d80b",
+        "deploymentBlock": 24676792,
+        "description": "Reverse burn mechanism for STATE holders"
+      }
+    },
+    "helpers": {
+      "LPHelper": {
+        "address": "0x5CbDC89F62608a242FF740A52d91eFdB7AB09114",
+        "deploymentBlock": 24676792,
+        "description": "Liquidity provider helper for DEX operations"
+      }
+    }
+  },
+  "dex": {
+    "router": {
+      "address": "0x165C3410fC91EF562C50559f7d2289fEbed552d9",
+      "name": "PulseX Router V2"
+    },
+    "factory": {
+      "address": "0x29eA7545DEf87022BAdc76323F373EA1e707C523",
+      "name": "PulseX Factory"
+    },
+    "baseToken": {
+      "address": "0xA1077a294dDE1B09bB078844df40758a5D0f9a27",
+      "name": "Wrapped PLS",
+      "symbol": "WPLS",
+      "decimals": 18
+    }
+  },
+  "governance": {
+    "owner": "0x98b0379474Cf84Ab257bEe0b73dceb11051223A5",
+    "treasury": "0x98b0379474Cf84Ab257bEe0b73dceb11051223A5"
+  },
+  "protocol": {
+    "version": "4.0",
+    "status": "FULLY_DEPLOYED_AND_INTEGRATED",
+    "features": {
+      "auctions": true,
+      "swapping": true,
+      "staking": false,
+      "buyAndBurn": true,
+      "liquidityMining": true,
+      "airdrop": true
+    },
+    "constants": {
+      "PROTOCOL_FEE_BPS": 50,
+      "NORMAL_BURN_BPS": 3000,
+      "AUCTION_DAYS_LIMIT": 1000,
+      "CLAIM_INTERVAL": 8640000,
+      "MAX_SUPPLY": "500000000000000000000000000000000"
+    }
+  },
+  "frontend": {
+    "supportedWallets": ["MetaMask", "WalletConnect", "Coinbase Wallet"],
+    "requiredChainId": 369,
+    "fallbackRpc": "https://rpc.pulsechain.com",
+    "multicallAddress": null,
+    "subgraphUrl": null
+  },
+  "integration": {
+    "readyForUse": true,
+    "swapConfigured": true,
+    "tokensLinked": true,
+    "contractsDeployed": true,
+    "lastVerified": "2025-10-04T00:00:00Z"
+  }
+}

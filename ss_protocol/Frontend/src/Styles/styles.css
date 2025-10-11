@@ -1,0 +1,491 @@
+/* Import the Satoshi font */
+
+/* Root styles for the dark theme */
+:root {
+  --primary-bg: #121212;
+  /* Background */
+  --secondary-bg: #1e1e1e;
+  /* Card or section backgrounds */
+  --primary-text: #ffffff;
+  /* Main text */
+  --secondary-text: #b3b3b3;
+  /* Secondary text */
+  --accent-color: #ff4081;
+  /* Accent color */
+  --border-color: #333333;
+  /* Border color */
+  --font-family: "Satoshi", sans-serif;
+  /* Satoshi font */
+}
+
+::selection {
+  background-color: #ff79a7;
+  color: #ffffff;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-family);
+  background-color: #0f1319;
+  color: var(--primary-text);
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+a {
+  color: var(--accent-color);
+  text-decoration: none;
+}
+
+.second-span-fontsize {
+  font-size: 13px;
+  font-weight: 700
+}
+
+/* a:hover {
+  text-decoration: underline;
+} */
+
+header,
+nav,
+footer {
+  background-color: var(--secondary-bg);
+  color: var(--primary-text);
+  padding: 1rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.card {
+  background-color: var(--secondary-bg);
+  color: var(--primary-text);
+  padding: 1rem;
+  margin: 1rem 0;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--border-color);
+}
+
+button {
+  background-color: var(--accent-color);
+  color: var(--primary-text);
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  font-family: var(--font-family);
+  cursor: pointer;
+}
+
+button:hover {
+  background-color: #ff79a7;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.cursor {
+  cursor: pointer;
+}
+
+th,
+td {
+  padding: 0.75rem;
+  border: 1px solid var(--border-color);
+  text-align: left;
+}
+
+th {
+  background-color: var(--secondary-bg);
+  color: var(--primary-text);
+}
+
+td {
+  color: var(--secondary-text);
+}
+
+/* Active Auctions Modal Styles */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1050;
+  backdrop-filter: blur(5px);
+}
+
+.modal-content {
+  background-color: var(--secondary-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 30px !important;
+  max-width: 500px;
+  width: 90%;
+  max-height: 80vh;
+  overflow: hidden;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.modal-title {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.modal-body {
+  padding: 1.5rem;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.modal-footer {
+  padding: 1rem 1.5rem;
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  justify-content: flex-end;
+}
+
+.active-auctions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.auction-item {
+  padding: 1rem;
+  background-color: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  transition: all 0.2s ease;
+}
+
+.auction-item:hover {
+  background-color: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.2);
+  transform: translateY(-1px);
+}
+
+.auction-emoji {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  background-color: rgba(255, 255, 255, 0.1);
+  border-radius: 50%;
+}
+
+.token-name {
+  font-size: 1rem;
+  margin-bottom: 0.25rem;
+}
+
+.token-details {
+  font-size: 0.875rem;
+}
+
+.swap-ratio {
+  font-size: 0.875rem;
+  margin-bottom: 0.25rem;
+}
+
+.time-left {
+  font-size: 0.75rem;
+  opacity: 0.8;
+}
+
+/* Custom scrollbar for modal */
+.modal-body::-webkit-scrollbar {
+  width: 6px;
+}
+
+.modal-body::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+
+.modal-body::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 3px;
+}
+
+.modal-body::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.5);
+}
+
+/* Simple Active Auctions Modal Styles */
+.simple-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  z-index: 1050;
+}
+
+.simple-modal-content {
+  background-color: var(--secondary-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  max-height: 450px;
+  overflow: hidden;
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+}
+
+.simple-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.simple-modal-title {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.simple-modal-body {
+  padding: 0.75rem;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.simple-auctions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.simple-auction-item {
+  padding: 0.5rem;
+  background-color: rgba(255, 255, 255, 0.03);
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  transition: all 0.2s ease;
+}
+
+.simple-auction-item:hover {
+  background-color: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.simple-token-logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+}
+
+.simple-token-logo img {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+}
+
+.simple-token-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.simple-token-name {
+  font-size: 0.8rem;
+  font-weight: 500;
+  margin-bottom: 0.2rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.simple-auction-status {
+  font-size: 0.7rem;
+  opacity: 0.8;
+}
+
+/* Custom scrollbar for simple modal */
+.simple-modal-body::-webkit-scrollbar {
+  width: 4px;
+}
+
+.simple-modal-body::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 2px;
+}
+
+.simple-modal-body::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 2px;
+}
+
+.simple-modal-body::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* Route Details Styles */
+.simple-route-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.simple-route-item {
+  padding: 0.5rem;
+  background-color: rgba(255, 255, 255, 0.03);
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  transition: all 0.2s ease;
+}
+
+.simple-route-item:hover {
+  background-color: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.simple-route-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.simple-route-path {
+  font-size: 0.8rem;
+  font-weight: 500;
+  margin-bottom: 0.2rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.simple-route-details {
+  font-size: 0.7rem;
+  opacity: 0.8;
+}
+
+.token-symbol {
+  font-weight: 500;
+  color: #fff;
+}
+
+.arrow {
+  color: #aaa;
+  margin: 0 0.25rem;
+  font-size: 0.75rem;
+}
+
+/* Route Pairs Styles */
+.route-pairs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.route-pair-item {
+  padding: 0.3rem 0.5rem;
+  background-color: rgba(255, 255, 255, 0.02);
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.pair-tokens {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+}
+
+.pair-details {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.7rem;
+}
+
+.exchange-name {
+  color: #aaa;
+  font-weight: 500;
+}
+
+.pair-percent {
+  color: #888;
+  font-weight: 600;
+}
+
+.animated-circle {
+  width: 30px;
+  height: 30px;
+  background-color: #ff4081;
+  /* purple */
+  border-radius: 50%;
+  position: relative;
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(160, 32, 240, 0.7);
+  }
+
+  70% {
+    box-shadow: 0 0 0 15px rgba(160, 32, 240, 0);
+  }
+
+  100% {
+    box-shadow: 0 0 0 0 rgba(160, 32, 240, 0);
+  }
+}
+
+.modal-animate {
+  animation-duration: 1s;
+  animation-fill-mode: both;
+}
+
+.slide-in {
+  animation-name: slideInFromTop;
+}
+
+.slide-out {
+  animation-name: slideOutToBottom;
+}
+
+@keyframes slideInFromTop {
+  from {
+    opacity: 0;
+    transform: translateY(-80px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideOutToBottom {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateY(80px);
+  }
+}
