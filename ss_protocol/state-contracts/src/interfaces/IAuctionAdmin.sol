@@ -25,4 +25,16 @@ interface IAuctionAdmin {
     function createPoolForToken(address swapContract, address auctionToken, uint256 tokenAmount, uint256 stateAmount, address tokenOwner) external returns (address pair);
     function startAutoAuction(address swapContract) external;
     function registerTokenWithPair(address swapContract, address token, address tokenOwner, address pairAddress) external;
+    
+    // Development Fee Wallet Management
+    function addDevelopmentFeeWallet(address wallet, uint256 percentage) external;
+    function removeDevelopmentFeeWallet(address wallet) external;
+    function updateDevelopmentFeeWalletPercentage(address wallet, uint256 newPercentage) external;
+    function getDevelopmentFeeWalletsInfo() external view returns (
+        address[] memory wallets,
+        uint256[] memory percentages,
+        bool[] memory activeStatuses
+    );
+    function getWalletPercentage(address wallet) external view returns (uint256);
+    function distributeFeeToWallets(address token, uint256 amount) external;
 }

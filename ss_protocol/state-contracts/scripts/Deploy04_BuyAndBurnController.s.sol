@@ -5,16 +5,16 @@ import "forge-std/Script.sol";
 import "forge-std/console.sol";
 import {BuyAndBurnController_V2} from "../src/BuyAndBurnController_V2.sol";
 
-contract Deploy07_BuyAndBurnController is Script {
+contract Deploy04_BuyAndBurnController is Script {
     // Update these addresses after previous deployments
-    address constant STATE_V3_ADDRESS = 0x9454Eb295d8E4d871d724013dffd2301C486FD07; // STATE_V3 deployed
-    address constant SWAP_V3_ADDRESS = 0xeA55dB9Ae0eAfD245720563583871CE9ED549772; // SWAP_V3 deployed
-    
+    address constant STATE_V3_ADDRESS = 0x294a2db4E0c321AF7c2223e9ce19c0127F1424F2; // STATE_V3 from Deploy02
+    address constant SWAP_V3_ADDRESS = 0x1062D1bBD322781Be2a701698e8DD62E4D3aBCd4; // SWAP_V3 from Deploy01
+
     // PulseChain Mainnet addresses
     address constant WPLS = 0xA1077a294dDE1B09bB078844df40758a5D0f9a27;
     address constant PULSEX_ROUTER = 0x98bf93ebf5c380C0e6Ae8e192A7e2AE08edAcc02;
     address constant PULSEX_FACTORY = 0x1715a3E4A142d8b698131108995174F37aEBA10D;
-    address constant GOV_ADDRESS = 0x9FA004E13e780EF5b50ca225ad5DCD4D0Fe9ed70;
+    address constant GOV_ADDRESS = 0xBAaB2913ec979d9d21785063a0e4141e5B787D28;
 
     function run() external {
         require(STATE_V3_ADDRESS != address(0), "Must update STATE_V3_ADDRESS first");
@@ -64,8 +64,8 @@ contract Deploy07_BuyAndBurnController is Script {
         console.log("- SWAP Vault:", SWAP_V3_ADDRESS);
         console.log("- Owner:", GOV_ADDRESS);
         console.log("");
-        console.log("NEXT STEP: Deploy SwapLens:");
-        console.log("forge script temp_scripts/Deploy08_SwapLens.s.sol:Deploy08_SwapLens");
+        console.log("NEXT STEP: Deploy DAV_V3:");
+        console.log("forge script temp_scripts/Deploy05_DAV_V3.s.sol:Deploy05_DAV_V3");
         console.log("  --rpc-url https://rpc.pulsechain.com");
         console.log("  --private-key $PRIVATE_KEY");
         console.log("  --broadcast");

@@ -7,24 +7,20 @@ import {SWAP_V3} from "../src/AuctionSwap.sol";
 
 contract Deploy01_SWAP_V3 is Script {
     // PulseChain Mainnet addresses
-    address constant GOV_ADDRESS = 0x9FA004E13e780EF5b50ca225ad5DCD4D0Fe9ed70;
-    address constant DEV_ADDRESS = 0x91Bd0000565f89DBf2D2D28c57db3E5c56873A77;
+    address constant GOV_ADDRESS = 0xBAaB2913ec979d9d21785063a0e4141e5B787D28;
 
     function run() external {
-        require(GOV_ADDRESS != DEV_ADDRESS, "Governance and dev addresses must be different");
-        
         console.log("=== DEPLOYING SWAP_V3 CONTRACT ===");
         console.log("Chain ID:", block.chainid);
         console.log("Deployer:", msg.sender);
         console.log("Balance:", msg.sender.balance / 1e18, "PLS");
         console.log("Governance Address:", GOV_ADDRESS);
-        console.log("Development Address:", DEV_ADDRESS);
         console.log("");
 
         vm.startBroadcast();
         
         console.log("Deploying SWAP_V3...");
-        SWAP_V3 swapV3 = new SWAP_V3(GOV_ADDRESS, DEV_ADDRESS);
+        SWAP_V3 swapV3 = new SWAP_V3(GOV_ADDRESS);
         
         console.log("SUCCESS: SWAP_V3 deployed at:", address(swapV3));
         console.log("");

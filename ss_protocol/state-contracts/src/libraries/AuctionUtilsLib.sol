@@ -23,15 +23,16 @@ library AuctionUtilsLib {
         if (!_auctionStarted(schedule, currentTime)) return (address(0), false);
         if (schedule.tokenCount == 0) return (address(0), false);
         
-        // Calculate which 15-minute auction slot we're in
+        // Calculate which auction slot we're in (15 min auction + 5 min interval = 20 min per slot)
         uint256 timeSinceStart = currentTime - schedule.scheduleStart;
-        uint256 auctionSlot = timeSinceStart / AuctionLib.AUCTION_DURATION; // Each slot is 15 minutes
+        uint256 slotDuration = AuctionLib.AUCTION_DURATION + AuctionLib.AUCTION_INTERVAL;
+        uint256 auctionSlot = timeSinceStart / slotDuration; // Each slot is 20 minutes (15 min auction + 5 min break)
         uint256 tokenIndex = auctionSlot % schedule.tokenCount; // Use tokenCount instead of array length
         
         tokenOfDay = schedule.tokenByIndex[tokenIndex]; // Use mapping access instead of array
         
-        // Check if we're within the active 15-minute window for this slot
-        uint256 auctionStart = schedule.scheduleStart + (auctionSlot * AuctionLib.AUCTION_DURATION);
+        // Check if we're within the active 15-minute auction window (not in the 5-minute break)
+        uint256 auctionStart = schedule.scheduleStart + (auctionSlot * slotDuration);
         uint256 auctionEnd = auctionStart + AuctionLib.AUCTION_DURATION;
         
         active = currentTime >= auctionStart && currentTime < auctionEnd;
@@ -66,13 +67,25 @@ library AuctionUtilsLib {
         if (idx1 == 0) return 0;
         uint256 idx = idx1 - 1;
         
-        // Count completed auction slots (each slot is 15 minutes)
+        // Count completed auction slots (each slot is 20 minutes: 15 min auction + 5 min interval)
         uint256 timeSinceStart = currentTime - schedule.scheduleStart;
-        uint256 completedSlots = timeSinceStart / AuctionLib.AUCTION_DURATION;
+        uint256 slotDuration = AuctionLib.AUCTION_DURATION + AuctionLib.AUCTION_INTERVAL;
+        uint256 completedSlots = timeSinceStart / slotDuration;
         
         // Calculate how many times this token has appeared
         if (completedSlots < idx) return 0;
         return (completedSlots - idx) / schedule.tokenCount + 1;
+    }
+
+    function _getCompletedSlots(AuctionSchedule storage schedule, uint256 currentTime) 
+        internal 
+        view 
+        returns (uint256) 
+    {
+        if (!_auctionStarted(schedule, currentTime)) return 0;
+        uint256 timeSinceStart = currentTime - schedule.scheduleStart;
+        uint256 slotDuration = AuctionLib.AUCTION_DURATION + AuctionLib.AUCTION_INTERVAL;
+        return timeSinceStart / slotDuration;
     }
 
     function isAuctionActive(
@@ -123,10 +136,11 @@ library AuctionUtilsLib {
         (address today, bool activeWindow) = getTodayToken(schedule, currentTime);
         if (!activeWindow || today != inputToken) return 0;
         
-        // Calculate time left in current 15-minute slot
+        // Calculate time left in current auction slot (15 min auction, not including 5 min interval)
         uint256 timeSinceStart = currentTime - schedule.scheduleStart;
-        uint256 auctionSlot = timeSinceStart / AuctionLib.AUCTION_DURATION;
-        uint256 auctionEnd = schedule.scheduleStart + ((auctionSlot + 1) * AuctionLib.AUCTION_DURATION);
+        uint256 slotDuration = AuctionLib.AUCTION_DURATION + AuctionLib.AUCTION_INTERVAL;
+        uint256 auctionSlot = timeSinceStart / slotDuration;
+        uint256 auctionEnd = schedule.scheduleStart + (auctionSlot * slotDuration) + AuctionLib.AUCTION_DURATION;
         
         return auctionEnd > currentTime ? auctionEnd - currentTime : 0;
     }

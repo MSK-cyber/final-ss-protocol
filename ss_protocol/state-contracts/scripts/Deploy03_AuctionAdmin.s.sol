@@ -5,9 +5,10 @@ import "forge-std/Script.sol";
 import "forge-std/console.sol";
 import {AuctionAdmin} from "../src/AuctionAdmin.sol";
 
-contract Deploy06_AuctionAdmin is Script {
+contract Deploy03_AuctionAdmin is Script {
     // Update this address after SWAP_V3 deployment
-    address constant SWAP_V3_ADDRESS = 0xeA55dB9Ae0eAfD245720563583871CE9ED549772; // SWAP_V3 deployed address
+    address constant SWAP_V3_ADDRESS = 0x1062D1bBD322781Be2a701698e8DD62E4D3aBCd4; // SWAP_V3 from Deploy01
+    address constant GOV_ADDRESS = 0xBAaB2913ec979d9d21785063a0e4141e5B787D28;
 
     function run() external {
         require(SWAP_V3_ADDRESS != address(0), "Must update SWAP_V3_ADDRESS first");
@@ -27,6 +28,10 @@ contract Deploy06_AuctionAdmin is Script {
         console.log("SUCCESS: AuctionAdmin deployed at:", address(auctionAdmin));
         console.log("");
         
+        // Transfer ownership to governance
+        auctionAdmin.transferOwnership(GOV_ADDRESS);
+        console.log("Ownership transferred to governance:", GOV_ADDRESS);
+        
         vm.stopBroadcast();
         
         console.log("=== DEPLOYMENT COMPLETED ===");
@@ -37,7 +42,7 @@ contract Deploy06_AuctionAdmin is Script {
         console.log("- Owner: deployer (", msg.sender, ")");
         console.log("");
         console.log("NEXT STEP: Deploy BuyAndBurnController_V2:");
-        console.log("forge script temp_scripts/Deploy07_BuyAndBurnController.s.sol:Deploy07_BuyAndBurnController");
+        console.log("forge script temp_scripts/Deploy04_BuyAndBurnController.s.sol:Deploy04_BuyAndBurnController");
         console.log("  --rpc-url https://rpc.pulsechain.com");
         console.log("  --private-key $PRIVATE_KEY");
         console.log("  --broadcast");

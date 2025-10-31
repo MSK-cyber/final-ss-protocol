@@ -94,6 +94,7 @@ contract BuyAndBurnController_V2 is Ownable, ReentrancyGuard {
     event FullBuyAndBurnExecuted(uint256 plsConverted, uint256 wplsProcessed);
     event InitialPoolCreated(address indexed pool, uint256 stateAmount, uint256 totalWpls, uint256 plsSent);
     event SwapVaultAllowanceSet(uint256 amount);
+    event LiquidityAdded(address indexed pool, uint256 stateAmount, uint256 wplsAmount, uint256 liquidityBurned);
     
     constructor(
         address _state,
@@ -194,6 +195,72 @@ contract BuyAndBurnController_V2 is Ownable, ReentrancyGuard {
         
         emit PoolCreated(pool, amountState, amountWpls, liquidity);
         emit InitialPoolCreated(pool, stateAmount, totalWplsAmount, msg.value);
+    }
+    
+    /**
+     * @notice Add more liquidity to existing STATE/WPLS pool
+     * @dev Allows governance to manually add liquidity to the buy & burn pool
+     *      STATE tokens sourced from SWAP vault, PLS/WPLS from governance wallet
+     *      LP tokens are automatically burned
+     * @param stateAmount Amount of STATE tokens to add (from SWAP vault)
+     * @param wplsAmount Amount of WPLS tokens to add (optional, from governance wallet)
+     * @return liquidity Amount of LP tokens that were burned
+     */
+    function addMoreLiquidity(
+        uint256 stateAmount,
+        uint256 wplsAmount
+    ) external payable onlyOwner nonReentrant returns (uint256 liquidity) {
+        require(stateWplsPool != address(0), "Pool not initialized");
+        require(stateAmount > 0, "Invalid STATE amount");
+        
+        // Calculate total WPLS needed
+        uint256 totalWplsAmount = wplsAmount;
+        
+        // Convert any sent PLS to WPLS
+        if (msg.value > 0) {
+            IWPLS(WPLS).deposit{value: msg.value}();
+            totalWplsAmount += msg.value;
+        }
+        
+        require(totalWplsAmount > 0, "No WPLS/PLS provided");
+        
+        // Transfer STATE tokens from SWAP vault (allowance must be pre-set by governance)
+        ISTATE(STATE).transferFrom(SWAP_VAULT, address(this), stateAmount);
+        
+        // If wplsAmount > 0, transfer WPLS from governance (must be pre-approved)
+        if (wplsAmount > 0) {
+            IERC20(WPLS).transferFrom(msg.sender, address(this), wplsAmount);
+        }
+        
+        // Approve router for both tokens
+        ISTATE(STATE).approve(ROUTER, stateAmount);
+        IERC20(WPLS).approve(ROUTER, totalWplsAmount);
+        
+        // Add liquidity - LP tokens go directly to BURN address
+        (uint256 amountState, uint256 amountWpls, uint256 lpAmount) = 
+            IPulseXRouter(ROUTER).addLiquidity(
+                STATE,
+                WPLS,
+                stateAmount,
+                totalWplsAmount,
+                (stateAmount * 95) / 100, // 5% slippage tolerance
+                (totalWplsAmount * 95) / 100,
+                BURN_ADDRESS,  // LP tokens burned immediately!
+                block.timestamp + 300
+            );
+        
+        require(lpAmount > 0, "No LP tokens minted");
+        
+        // Keep unused tokens in contract for future buy & burn operations
+        // STATE and WPLS leftovers can be utilized by executeBuyAndBurn()
+        
+        // Clean up allowances
+        ISTATE(STATE).approve(ROUTER, 0);
+        IERC20(WPLS).approve(ROUTER, 0);
+        
+        emit LiquidityAdded(stateWplsPool, amountState, amountWpls, lpAmount);
+        
+        return lpAmount;
     }
     
     /**

@@ -8,7 +8,33 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "./libraries/ReferralCodeLib.sol";
 import "./libraries/Distribution.sol";
 import "./libraries/TimeUtilsLib.sol";
+import "./interfaces/IAuctionAdmin.sol";
 // Burn-to-claim feature removed: BurnLibrary integration deleted
+
+// Interfaces for ROI calculation
+interface ISWAP_V3 {
+    function autoRegisteredTokens(uint256 index) external view returns (address);
+    function getRatioPrice(address token) external view returns (uint256);
+    function getAutoRegisteredTokensCount() external view returns (uint256);
+    
+    // Auction schedule struct getter
+    function auctionSchedule() external view returns (
+        bool scheduleSet,
+        uint256 scheduleStart,
+        uint256 scheduleSize,
+        uint256 auctionDaysLimit,
+        uint256 tokenCount
+    );
+}
+
+interface IBuyAndBurn {
+    function stateWplsPool() external view returns (address);
+}
+
+interface IPair {
+    function getReserves() external view returns (uint112 reserve0, uint112 reserve1, uint32 blockTimestampLast);
+    function token0() external view returns (address);
+}
 
 contract DAV_V3 is
     ERC20,
@@ -31,8 +57,8 @@ contract DAV_V3 is
     uint256 public constant MAX_SUPPLY = 10000000 ether; // 10,000,000 DAV Tokens (hard cap, includes 2,000 gov mint)
     uint256 public constant MAX_HOLDERS = 5000; // 5,000 wallets limit per requirements
     // Mint price per whole DAV (1e18) in PLS units
-    // Updated per requirements: 500 PLS per DAV
-    uint256 public constant TOKEN_COST = 500 ether; // 500 PLS per DAV
+    // Updated per requirements: 10,000 PLS per DAV
+    uint256 public constant TOKEN_COST = 10000 ether; // 10,000 PLS per DAV
     uint256 public constant REFERRAL_BONUS = 5; // 5% bonus for referrers
     uint256 public constant LIQUIDITY_SHARE = 80; // 80% LIQUIDITY SHARE
     uint256 public constant DEVELOPMENT_SHARE = 5; // 5% DEV SHARE
@@ -67,9 +93,13 @@ contract DAV_V3 is
 
     //NOTE: Governance is using multi-sig method to ensure security of that wallet address.
     address public governance;
-    address public liquidityWallet;
-    address public developmentWallet;
     address public swapContract; // SWAP contract can transfer governance for protocol-wide changes
+    address public auctionAdmin; // AuctionAdmin contract for development fee wallet registry
+    address public buyAndBurnController; // BuyAndBurn contract for STATE/WPLS pool access
+    
+    // Development fee wallets are managed in AuctionAdmin contract
+    // This contract reads wallet info via IAuctionAdmin interface
+    //bool public canMintDAV; // Flag to enable/disable minting (requires at least 1 dev wallet in AuctionAdmin)
     // @notice Transfers are permanently paused for non-governance addresses to enforce a no-transfer policy
     // @dev This is an intentional design choice to restrict token transfers and ensure the integrity of the airdrop mechanism.
     bool public transfersPaused = false;  // Enable transfers
@@ -91,13 +121,6 @@ contract DAV_V3 is
         uint256 timestamp; // mint time
         bool fromGovernance; // true = disqualified from rewards
     }
-    struct WalletUpdateProposal {
-        address newWallet;
-        uint256 proposedAt;
-    }
-
-    WalletUpdateProposal public pendingLiquidityWallet;
-    WalletUpdateProposal public pendingDevelopmentWallet;
 
     mapping(address => MintBatch[]) public mintBatches;
     // Admin analytics: mint counters per day (aligned to 15:00 GMT+3 like SWAP)
@@ -107,13 +130,17 @@ contract DAV_V3 is
     event ReferralCodeGenerated(address indexed user, string referralCode);
     // Token name/emoji registry events removed
     event GovernanceUpdated(address oldGovernance, address newGovernance);
-    event LiquidityWalletUpdated(address newWallet);
-    event DevelopmentWalletUpdated(address newWallet);
+    event DevelopmentWalletAdded(address indexed wallet, uint256 percentage, uint256 index);
+    event DevelopmentWalletRemoved(address indexed wallet, uint256 index);
+    event DevelopmentWalletPercentageUpdated(address indexed wallet, uint256 oldPercentage, uint256 newPercentage);
+    event MintingEnabled();
+    event MintingDisabled();
     event ContractPaused(address by);
     event ContractUnpaused(address by);
     // Registry status update event removed
     // Burn-to-claim removed: SwapAddressUpdated event deleted
     event ReferralPayoutSkipped(address indexed user, address indexed referrer, uint256 amount, string reason);
+    event UnclaimedRewardsReclaimed(uint256 totalAmount, uint256 timestamp);
     event DistributionEvent(
         address indexed user,
         uint256 amountMinted,
@@ -126,20 +153,23 @@ contract DAV_V3 is
         uint256 timestamp
     );
     constructor(
-        address _liquidityWallet,
         address _stateToken,
         address _gov,
+        address _auctionAdmin,
+        address _buyAndBurnController,
         string memory tokenName,
         string memory tokenSymbol // Should be "pDAV" for mainnet
     ) ERC20(tokenName, tokenSymbol) {
         require(
-            _liquidityWallet != address(0) &&
-                _stateToken != address(0),
-            "Wallet addresses cannot be zero"
+            _stateToken != address(0) &&
+                _auctionAdmin != address(0) &&
+                _buyAndBurnController != address(0),
+            "Addresses cannot be zero"
         );
-        liquidityWallet = _liquidityWallet;
-        developmentWallet = msg.sender; // Deployer becomes initial development wallet
         governance = _gov;
+        auctionAdmin = _auctionAdmin;
+        buyAndBurnController = _buyAndBurnController;
+        //canMintDAV = false; // Minting disabled until dev wallets are set in AuctionAdmin
         // Initial governance allocation
         _mint(_gov, INITIAL_GOV_MINT);
         mintedSupply += INITIAL_GOV_MINT;
@@ -226,32 +256,66 @@ contract DAV_V3 is
         require(_swapContract != address(0), "Invalid swap contract address");
         swapContract = _swapContract;
     }
+
+    // ================= DEVELOPMENT FEE DISTRIBUTION =================
+    // Development wallets are managed centrally in AuctionAdmin contract
+    // This contract only distributes the 5% PLS minting fee to those wallets
     
-    function proposeLiquidityWallet(address _newLiquidityWallet) external onlyGovernance {
-        require(_newLiquidityWallet != address(0), "Invalid wallet address");
-        pendingLiquidityWallet = WalletUpdateProposal(_newLiquidityWallet, block.timestamp + 7 days);
+    /**
+     * @notice Internal function to distribute development share among multiple wallets
+     * @param developmentShare Total amount to distribute
+     * @dev Reads wallet configuration from AuctionAdmin contract
+     */
+    function _distributeDevelopmentShare(uint256 developmentShare) internal {
+        if (developmentShare == 0) return;
+        if (auctionAdmin == address(0)) return; // No admin set
+        
+        totalDevelopmentAllocated += developmentShare;
+        
+        // Get wallet info from AuctionAdmin
+        (
+            address[] memory wallets,
+            uint256[] memory percentages,
+            bool[] memory activeStatuses
+        ) = IAuctionAdmin(auctionAdmin).getDevelopmentFeeWalletsInfo();
+        
+        // Validate at least one wallet exists
+        require(wallets.length > 0, "No dev wallets configured in AuctionAdmin");
+        
+        uint256 totalDistributed = 0;
+        
+        // Distribute based on percentages
+        for (uint256 i = 0; i < wallets.length; i++) {
+            if (activeStatuses[i] && percentages[i] > 0) {
+                uint256 amount = (developmentShare * percentages[i]) / 100;
+                
+                if (amount > 0) {
+                    (bool success, ) = wallets[i].call{value: amount}("");
+                    require(success, "Dev wallet transfer failed");
+                    totalDistributed += amount;
+                }
+            }
+        }
+        
+        // Handle dust (remainder due to rounding)
+        uint256 dust = developmentShare - totalDistributed;
+        if (dust > 0 && wallets.length > 0) {
+            // Give dust to first active wallet with non-zero percentage
+            for (uint256 i = 0; i < wallets.length; i++) {
+                if (activeStatuses[i] && percentages[i] > 0) {
+                    (bool success, ) = wallets[i].call{value: dust}("");
+                    require(success, "Dust transfer failed");
+                    break;
+                }
+            }
+        }
     }
 
-    function confirmLiquidityWallet() external onlyGovernance {
-        require(pendingLiquidityWallet.newWallet != address(0), "No pending proposal");
-        require(block.timestamp >= pendingLiquidityWallet.proposedAt, "Timelock not expired");
-        liquidityWallet = pendingLiquidityWallet.newWallet;
-        delete pendingLiquidityWallet;
-        emit LiquidityWalletUpdated(liquidityWallet);
-    }
+    // ================= SAFETY FUNCTIONS =================
+    
 
-    function proposeDevelopmentWallet(address _newDevelopmentWallet) external onlyGovernance {
-        require(_newDevelopmentWallet != address(0), "Invalid wallet address");
-        pendingDevelopmentWallet = WalletUpdateProposal(_newDevelopmentWallet, block.timestamp + 7 days);
-    }
-
-    function confirmDevelopmentWallet() external onlyGovernance {
-        require(pendingDevelopmentWallet.newWallet != address(0), "No pending proposal");
-        require(block.timestamp >= pendingDevelopmentWallet.proposedAt, "Timelock not expired");
-        developmentWallet = pendingDevelopmentWallet.newWallet;
-        delete pendingDevelopmentWallet;
-        emit DevelopmentWalletUpdated(developmentWallet);
-    }
+    // ================= SAFETY FUNCTIONS =================
+    
     modifier whenNotPaused() {
         require(!paused, "Contract is paused");
         _;
@@ -396,6 +460,7 @@ contract DAV_V3 is
         string memory referralCode
     ) external payable nonReentrant whenNotPaused {
         // Checks
+        //require(canMintDAV, "DAV minting disabled - no dev wallets configured");
         // Proactively refresh minter holder status to avoid stale holder entries blocking capacity
         Distribution.updateDAVHolderStatus(holderState, msg.sender, governance, getActiveBalance);
         require(amount > 0, "Amount must be greater than zero");
@@ -450,11 +515,11 @@ contract DAV_V3 is
             emit ReferralCodeGenerated(msg.sender, newReferralCode);
         }
 
-        // Burn-to-claim removed: redirect protocol remainder to liquidity
+        // Burn-to-claim removed: redirect protocol remainder to BuyAndBurnController
         if (stateLPShare > 0) {
             totalLiquidityAllocated += stateLPShare;
-            address remainderDestination = liquidityWallet;
-            (bool successLiquidityRemainder, ) = remainderDestination.call{ value: stateLPShare }("");
+            require(buyAndBurnController != address(0), "BuyAndBurn not set");
+            (bool successLiquidityRemainder, ) = buyAndBurnController.call{ value: stateLPShare }("");
             require(successLiquidityRemainder, "Remainder transfer failed");
         }
         // Mint tokens
@@ -470,46 +535,42 @@ contract DAV_V3 is
             governance,
             getActiveMintedBalance
         );
-        // Interactions
+        // Interactions - Referral rewards added to claimable holder rewards
         if (referrer != address(0) && referralShare > 0) {
             if (address(referrer).code.length == 0) {
-                // Try direct referral payout to EOA
-                referralRewards[referrer] += referralShare;
+                // Add referral rewards to referrer's claimable holder rewards (not paid immediately)
+                referralRewards[referrer] += referralShare; // Track lifetime referral earnings for analytics
                 totalReferralRewardsDistributed += referralShare;
-                (bool successRef, ) = referrer.call{value: referralShare}("");
-                if (!successRef) {
-                    // Soft-fail: redirect to liquidity wallet
-                    totalLiquidityAllocated += referralShare;
-                    address fallbackDestination = liquidityWallet;
-                    (bool successLiqFallback, ) = fallbackDestination.call{value: referralShare}("");
-                    require(successLiqFallback, "Referral fallback transfer failed");
-                    emit ReferralPayoutSkipped(msg.sender, referrer, referralShare, "Referrer payout failed - redirected to Liquidity");
-                }
+                
+                // Add to claimable holder rewards instead of immediate payout
+                holderState.holderRewards[referrer] += referralShare;
+                holderState.holderFunds += referralShare;
             } else {
-                // Referrer is a contract – skip payout and redirect to liquidity
+                // Referrer is a contract – redirect to BuyAndBurnController
                 totalLiquidityAllocated += referralShare;
-                address contractReferrerDestination = liquidityWallet;
-                (bool successLiq, ) = contractReferrerDestination.call{value: referralShare}("");
+                require(buyAndBurnController != address(0), "BuyAndBurn not set");
+                (bool successLiq, ) = buyAndBurnController.call{value: referralShare}("");
                 require(successLiq, "Contract referrer transfer failed");
-                emit ReferralPayoutSkipped(msg.sender, referrer, referralShare, "Referrer is contract - redirected to Liquidity");
+                emit ReferralPayoutSkipped(msg.sender, referrer, referralShare, "Referrer is contract - redirected to BuyAndBurn");
             }
         }
 
         if (liquidityShare > 0) {
             totalLiquidityAllocated += liquidityShare;
             
-            // Send 80% fees to liquidity wallet
-            address feeDestination = liquidityWallet;
-            (bool successLiquidity, ) = feeDestination.call{
+            // Send 80% fees to BuyAndBurnController for STATE buyback and burn
+            require(buyAndBurnController != address(0), "BuyAndBurn not set");
+            (bool successLiquidity, ) = buyAndBurnController.call{
                 value: liquidityShare
             }("");
-            require(successLiquidity, "Fee transfer failed");
+            require(successLiquidity, "BuyAndBurn transfer failed");
         }
+        
+        // Distribute development share to multiple wallets based on percentage
         if (developmentShare > 0) {
-            totalDevelopmentAllocated += developmentShare;
-            (bool successDev, ) = developmentWallet.call{ value: developmentShare }("");
-            require(successDev, "Development transfer failed");
+            _distributeDevelopmentShare(developmentShare);
         }
+        
         emit DistributionEvent(
             msg.sender,
             amount,
@@ -680,6 +741,11 @@ contract DAV_V3 is
         ); // Calculate claimable reward
         uint256 reward = earned(msg.sender);
         require(reward > 0, "No rewards to claim");
+        
+        // ROI CHECK: User must have portfolio value >= DAV mint cost to claim rewards
+        (, , bool meetsROI, ) = getROI(msg.sender);
+        require(meetsROI, "Insufficient ROI: portfolio value must exceed DAV mint cost");
+        
         require(holderState.holderFunds >= reward, "Insufficient holder funds");
         require(address(this).balance >= reward, "Insufficient contract balance");
         // Update state
@@ -689,6 +755,47 @@ contract DAV_V3 is
             (bool success, ) = user.call{value: reward}("");
         require(success, "Reward transfer failed");
         emit RewardsClaimed(msg.sender, reward);
+    }
+    
+    /**
+     * @notice Reclaim all unclaimed holder rewards after 1000 days from auction start
+     * @dev Can only be called by governance after 1000 days from when auctions started
+     *      Resets all user claimable rewards to zero and sends total to BuyAndBurnController
+     */
+    function reclaimUnclaimedRewards() external onlyGovernance nonReentrant whenNotPaused {
+        require(swapContract != address(0), "SWAP contract not set");
+        require(buyAndBurnController != address(0), "BuyAndBurn not set");
+        
+        // Get auction start time from SWAP contract
+        (bool scheduleSet, uint256 scheduleStart, , , ) = ISWAP_V3(swapContract).auctionSchedule();
+        
+        require(scheduleSet, "Auction not started yet");
+        require(scheduleStart > 0, "Invalid auction start time");
+        
+        // Check if 1000 days have passed since auction start
+        uint256 daysSinceStart = (block.timestamp - scheduleStart) / 1 days;
+        require(daysSinceStart >= 1000, "Cannot reclaim before 1000 days");
+        
+        // Get total unclaimed rewards
+        uint256 totalUnclaimed = holderState.holderFunds;
+        require(totalUnclaimed > 0, "No unclaimed rewards");
+        require(address(this).balance >= totalUnclaimed, "Insufficient contract balance");
+        
+        // Reset all holder rewards to zero
+        holderState.holderFunds = 0;
+        
+        // Reset individual user rewards (iterate through all holders)
+        uint256 holdersLength = holderState._holderLength();
+        for (uint256 i = 0; i < holdersLength; i++) {
+            address holder = holderState.davHolders[i];
+            holderState.holderRewards[holder] = 0;
+        }
+        
+        // Transfer unclaimed rewards to BuyAndBurnController
+        (bool success, ) = buyAndBurnController.call{value: totalUnclaimed}("");
+        require(success, "Transfer to BuyAndBurn failed");
+        
+        emit UnclaimedRewardsReclaimed(totalUnclaimed, block.timestamp);
     }
 
     function getDAVHoldersCount() public view returns (uint256) {
@@ -716,6 +823,175 @@ contract DAV_V3 is
     ) external view returns (string memory) {
         return referralData.userReferralCode[user];
     }
+    
+    /**
+     * @notice View function to check reclaim eligibility and days remaining
+     * @return canReclaim Whether governance can reclaim unclaimed rewards now
+     * @return daysRemaining Days until reclaim is possible (0 if already eligible)
+     * @return totalUnclaimed Total amount of unclaimed rewards available
+     */
+    function getReclaimInfo() external view returns (
+        bool canReclaim,
+        uint256 daysRemaining,
+        uint256 totalUnclaimed
+    ) {
+        totalUnclaimed = holderState.holderFunds;
+        
+        if (swapContract == address(0)) {
+            return (false, type(uint256).max, totalUnclaimed);
+        }
+        
+        try ISWAP_V3(swapContract).auctionSchedule() returns (
+            bool scheduleSet,
+            uint256 scheduleStart,
+            uint256,
+            uint256,
+            uint256
+        ) {
+            if (!scheduleSet || scheduleStart == 0) {
+                return (false, type(uint256).max, totalUnclaimed);
+            }
+            
+            uint256 daysSinceStart = (block.timestamp - scheduleStart) / 1 days;
+            
+            if (daysSinceStart >= 1000) {
+                canReclaim = true;
+                daysRemaining = 0;
+            } else {
+                canReclaim = false;
+                daysRemaining = 1000 - daysSinceStart;
+            }
+        } catch {
+            return (false, type(uint256).max, totalUnclaimed);
+        }
+    }
+
+    // ================= ROI CALCULATION FUNCTIONS =================
+    
+    /**
+     * @notice Calculate user's Return on Investment (ROI) based on portfolio value vs DAV mint cost
+     * @dev Calculates total value of: STATE tokens + auction tokens (converted to STATE) + claimable holder rewards (includes referral rewards)
+     * @dev Claimable rewards reset to zero after claiming, so ROI is recalculated from token holdings only
+     * @param user Address of the user to check ROI for
+     * @return totalValueInPLS Total portfolio value in PLS
+     * @return requiredValue Required value based on DAV balance (DAV * TOKEN_COST)
+     * @return meetsROI Whether user's portfolio value meets or exceeds the required value
+     * @return roiPercentage ROI as a percentage (totalValue * 100 / requiredValue)
+     */
+    function getROI(address user) public view returns (
+        uint256 totalValueInPLS,
+        uint256 requiredValue,
+        bool meetsROI,
+        uint256 roiPercentage
+    ) {
+        // STEP 1: Calculate STATE value from user's wallet
+        uint256 totalStateValue = StateToken.balanceOf(user);
+        
+        // STEP 2: Add auction tokens converted to STATE
+        // Loop through all registered auction tokens
+        if (swapContract != address(0)) {
+            ISWAP_V3 swap = ISWAP_V3(swapContract);
+            
+            // We'll loop through indices and catch out-of-bounds errors
+            // This handles dynamic array size without needing a separate getter
+            for (uint256 i = 0; i < 100; i++) { // Max 100 tokens (current: 2, future: 50)
+                try swap.autoRegisteredTokens(i) returns (address auctionToken) {
+                    if (auctionToken == address(0)) break;
+                    
+                    // Get user's balance of this auction token
+                    uint256 userTokenBalance = IERC20(auctionToken).balanceOf(user);
+                    
+                    if (userTokenBalance > 0) {
+                        // Get the ratio: STATE per auction token (18 decimals)
+                        try swap.getRatioPrice(auctionToken) returns (uint256 ratio) {
+                            if (ratio > 0) {
+                                // Convert auction tokens to STATE value
+                                totalStateValue += (userTokenBalance * ratio) / 1e18;
+                            }
+                        } catch {
+                            // Skip tokens with no pool or ratio errors
+                        }
+                    }
+                } catch {
+                    // Out of bounds - no more tokens
+                    break;
+                }
+            }
+        }
+        
+        // STEP 3: Convert total STATE to PLS
+        uint256 stateValueInPLS = _convertStateToPLS(totalStateValue);
+        
+        // STEP 4: Add claimable rewards (includes both holder distributions and referral rewards)
+        uint256 claimableRewards = holderState.holderRewards[user];
+        
+        totalValueInPLS = stateValueInPLS + claimableRewards;
+        
+        // STEP 5: Calculate required value (ALL DAV including expired)
+        uint256 totalDAV = balanceOf(user);
+        requiredValue = (totalDAV * TOKEN_COST) / 1e18;
+        
+        // STEP 6: Check if meets ROI
+        meetsROI = totalValueInPLS >= requiredValue;
+        
+        // STEP 7: Calculate ROI percentage
+        if (requiredValue > 0) {
+            roiPercentage = (totalValueInPLS * 100) / requiredValue;
+        } else {
+            roiPercentage = 0;
+        }
+    }
+    
+    /**
+     * @notice Internal helper to convert STATE amount to PLS value
+     * @dev Uses STATE/WPLS pool reserves from BuyAndBurnController
+     * @param stateAmount Amount of STATE tokens to convert
+     * @return plsValue Equivalent value in PLS
+     */
+    function _convertStateToPLS(uint256 stateAmount) internal view returns (uint256 plsValue) {
+        if (stateAmount == 0) return 0;
+        if (buyAndBurnController == address(0)) return 0;
+        
+        // Get STATE/WPLS pool address
+        address stateWplsPool;
+        try IBuyAndBurn(buyAndBurnController).stateWplsPool() returns (address pool) {
+            stateWplsPool = pool;
+        } catch {
+            return 0;
+        }
+        
+        if (stateWplsPool == address(0)) return 0;
+        
+        // Get pool reserves
+        uint112 reserve0;
+        uint112 reserve1;
+        try IPair(stateWplsPool).getReserves() returns (uint112 r0, uint112 r1, uint32) {
+            reserve0 = r0;
+            reserve1 = r1;
+        } catch {
+            return 0;
+        }
+        
+        if (reserve0 == 0 || reserve1 == 0) return 0;
+        
+        // Determine which reserve is STATE
+        address token0;
+        try IPair(stateWplsPool).token0() returns (address t0) {
+            token0 = t0;
+        } catch {
+            return 0;
+        }
+        
+        // Calculate PLS value based on pool ratio
+        if (token0 == STATE_TOKEN) {
+            // reserve0 = STATE, reserve1 = WPLS (PLS)
+            plsValue = (stateAmount * reserve1) / reserve0;
+        } else {
+            // reserve0 = WPLS (PLS), reserve1 = STATE
+            plsValue = (stateAmount * reserve0) / reserve1;
+        }
+    }
+
     // ------------------ Gettting Token data info functions ------------------------------
     /**
      * @notice Processes a token with a name and emoji.

@@ -93,8 +93,9 @@ library TimeUtilsLib {
         return calculateNextClaimStartTZ(blockTimestamp, int256(3), 15, 0);
     }
 
-    /// @notice Pakistan time (PKT: GMT+5) - 02:00 local (2 AM)
+    /// @notice Pakistan Standard Time (UTC+5) - 23:00 local (11:00 PM)
+    /// @dev 11:00 PM in PKT (UTC+5) corresponds to 18:00 UTC (6:00 PM UTC same day)
     function calculateNextClaimStartPakistan(uint256 blockTimestamp) internal pure returns (uint256) {
-        return calculateNextClaimStartTZ(blockTimestamp, int256(5), 2, 0);
+        return calculateNextClaimStartTZ(blockTimestamp, int256(5), 23, 0);
     }
 }

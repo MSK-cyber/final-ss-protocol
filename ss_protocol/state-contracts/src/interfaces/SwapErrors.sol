@@ -35,4 +35,29 @@ interface SwapErrors {
     error Step1NotCompleted();
     error Step2NotCompleted();
     error UserNotEligible();
+    error NoNormalAuctionParticipation();
+    error ExceedsReverseLimit();
+    
+    // Phase 2 Optimization - New Errors
+    error NoActiveAuction();
+    error ReverseAuctionActive();
+    error NormalAuctionActive();
+    error InvalidToken();
+    error InvalidAmounts();
+    error RouterNotSet();
+    error FactoryNotSet();
+    error InsufficientSTATE();
+    error InsufficientToken();
+    error OnlyAdmin();
+    error TokensNotRegistered();
+    error NoAutoTokens();
+    error ScheduleAlreadySet();
+    error InvalidStartTime();
+    error ArrayLengthMismatch();
+    error EmptyArrays();
+    error AirdropNotSet();
+    error TokenNotSupported();
+    error UnauthorizedRegistration();
+    error AuctionCyclesCompleted();
+    error TokenDeploymentLimitReached();
 }

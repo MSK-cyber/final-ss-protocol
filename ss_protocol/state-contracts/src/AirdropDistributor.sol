@@ -58,16 +58,18 @@ contract AirdropDistributor is Ownable(msg.sender), ReentrancyGuard {
     function pause() external onlyOwner { paused = true; }
     function unpause() external onlyOwner { paused = false; }
 
-    function claim(address token) external nonReentrant {
+    function claim() external nonReentrant {
         require(!paused, "paused");
         
         // STEP 1: Auto-register user for auctions (consistent with reverse auction)
         swap.registerUserForAuctions(msg.sender);
         
+        // Auto-detect today's token
+        (address token, bool active) = swap.getTodayToken();
+        require(active && token != address(0), "No active auction today");
+        
         // Only if token is today's token and normal day
         require(swap.isTokenSupported(token), "Token not supported");
-        (address today, bool active) = swap.getTodayToken();
-        require(active && today == token, "Not today's token");
         require(swap.isAuctionActive(token), "Reverse day or inactive auction"); // false on reverse days
 
         // Determine whole DAV units available minus already consumed for this token in this cycle
@@ -77,6 +79,10 @@ contract AirdropDistributor is Ownable(msg.sender), ReentrancyGuard {
 
         // Get current cycle for this token
         uint256 currentCycle = swap.getCurrentAuctionCycle(token);
+        
+        // Check if token has completed maximum cycles
+        require(currentCycle <= 20, "Token auction cycles completed");
+        
         uint256 already = consumedDavUnitsByCycle[token][msg.sender][currentCycle];
         require(davUnits > already, "No new DAV units");
 

@@ -34,6 +34,8 @@ interface SwapEvents {
     event ProtocolGovernanceTransferCompleted(address indexed newGovernance);
     // Vault distribution events
     event VaultDistribution(address indexed token, address indexed recipient, uint256 amount);
+    // Auction fee collection event
+    event AuctionFeeCollected(address indexed token, uint256 feeAmount, address indexed user);
     // System initialization event
     event SystemInitialized(
         address indexed stateToken,

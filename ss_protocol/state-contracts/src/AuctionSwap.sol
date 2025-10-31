@@ -24,19 +24,6 @@ interface IPulseXFactory {
     function createPair(address tokenA, address tokenB) external returns (address pair);
 }
 
-interface ILPHelper {
-    function factory() external view returns (address);
-    function createLPAndRegister(
-        address token,
-        address tokenOwner,
-        uint256 amountStateDesired,
-        uint256 amountTokenDesired,
-        uint256 amountStateMin,
-        uint256 amountTokenMin,
-        uint256 deadline
-    ) external;
-}
-
 interface IPulseXRouter02 {
     function addLiquidity(
         address tokenA,
@@ -85,35 +72,21 @@ contract SWAP_V3 is Ownable(msg.sender), ReentrancyGuard, SwapErrors, SwapEvents
     IDAV public dav;
     
     // Constants
-    uint256 public constant CLAIM_INTERVAL = 100 days;
-    uint256 public constant MAX_SUPPLY = 500000000000 ether;
     uint256 constant MIN_DAV_REQUIRED = 1 ether;
-    uint256 constant DAV_FACTOR = 5000000 ether;
-    uint256 constant AIRDROP_AMOUNT = 10000 ether;
-    uint256 constant TOKEN_OWNER_AIRDROP = 1000000 ether;
-    uint256 constant GOV_OWNER_AIRDROP = 0 ether;
-    uint256 constant PRECISION_FACTOR = 1e18;
-    uint256 public constant percentage = 3;
     address private constant BURN_ADDRESS = 0x000000000000000000000000000000000000dEaD;
-    uint256 constant TOKENS_PER_DAV = 3000 ether;
-    uint256 constant STATE_MULTIPLIER = 2;
-    uint256 public constant PROTOCOL_FEE_BPS = 50;
-    uint256 public constant NORMAL_BURN_BPS = 3000;
     uint256 public constant GOVERNANCE_UPDATE_DELAY = 7 days;
-    uint256 public constant MAX_TOTAL_AUCTIONS = 1000;
+    uint256 constant MAX_CYCLES_PER_TOKEN = 20; // Each token can run for maximum 20 cycles
     
     // Core addresses
     address public stateToken;
     address public davToken;
     address public governanceAddress;
-    address public DevAddress;
     address public airdropDistributor;
     IAuctionAdmin public auctionAdmin;
     address public pendingGovernance;
     address public pulseXRouter;
     address public pulseXFactory;
     address public lpHelper;
-    address public treasury;
     
     // State variables
     uint256 public TotalBurnedStates;
@@ -148,17 +121,13 @@ contract SWAP_V3 is Ownable(msg.sender), ReentrancyGuard, SwapErrors, SwapEvents
     mapping(uint256 => uint256) public uniqueSwappersCountByDayIndex;
     mapping(address => uint256) private lastCountedDayIdxForUser;
     
-    mapping(address => mapping(address => uint256)) private lastDavHolding;
     mapping(address => string[]) private userToTokenNames;
     mapping(address => mapping(string => address)) private deployedTokensByUser;
     mapping(address => address) private pairAddresses;
-    mapping(address => bool) private usedPairAddresses;
     mapping(address => bool) private supportedTokens;
     mapping(address => address) private tokenOwners;
     mapping(address => address[]) private ownerToTokens;
     mapping(string => bool) private isTokenNameUsed;
-    mapping(address => mapping(address => mapping(uint256 => bool))) private claimedBatches;
-    mapping(address => mapping(address => uint256)) private lastClaimTime;
     uint256 public tokenCount;
     mapping(address => uint256) private tokenNumber;
     mapping(bytes32 => SwapCoreLib.UserSwapInfo) private userSwapTotalInfo;
@@ -166,22 +135,22 @@ contract SWAP_V3 is Ownable(msg.sender), ReentrancyGuard, SwapErrors, SwapEvents
     mapping(address => mapping(address => mapping(uint256 => bool))) private hasUserBurnedTokens;
     mapping(address => mapping(address => mapping(uint256 => uint256))) private userStateBalance;
     mapping(address => mapping(address => mapping(uint256 => uint256))) private tokensBurnedByUser;
-    mapping(address => mapping(address => mapping(uint256 => bool))) private hasClaimedAirdrop;
     mapping(address => mapping(address => mapping(uint256 => uint256))) private davTokensUsed;
     
     mapping(address => mapping(address => mapping(uint256 => bool))) private hasCompletedReverseStep1;
     mapping(address => mapping(address => mapping(uint256 => uint256))) private reverseStateBalance;
     mapping(address => mapping(address => mapping(uint256 => bool))) private hasCompletedReverseStep2;
 
-    mapping(address => mapping(address => AuctionLib.AuctionCycle)) private auctionCycles;
-    mapping(address => uint256) private TotalStateBurnedByUser;
-    mapping(address => uint256) private TotalTokensBurned;
-    mapping(address => mapping(address => bool)) private hasClaimed;
-    mapping(address => uint256) private totalClaimedByUser;
-    mapping(address => uint256) private totalClaimedByGovernance;
+    // Cycle-wide STATE tracking for reverse auction limits (per user, per token, per cycle)
+    mapping(address => mapping(address => mapping(uint256 => uint256))) private cycleNormalStateEarned;
+    
+    // NEW: Track tokens received from normal auction Step 3 (pool swap output)
+    mapping(address => mapping(address => mapping(uint256 => uint256))) private normalAuctionSwapOutput;
 
-    mapping(address => uint256) private accruedProtocolFees;
-    mapping(address => uint256) private accruedBurnBalances;
+    mapping(address => uint256) private TotalTokensBurned;
+    
+    // Airdrop constant (must match AirdropDistributor.AIRDROP_PER_DAV)
+    uint256 constant AIRDROP_PER_DAV = 10_000 ether; // 10,000 tokens per DAV unit
 
     // ================= Modifiers =================
     
@@ -199,27 +168,28 @@ contract SWAP_V3 is Ownable(msg.sender), ReentrancyGuard, SwapErrors, SwapEvents
         if (paused) revert PausedErr();
         _;
     }
-    
-    modifier onlyGovOrLPHelper() {
-        if (msg.sender != governanceAddress && msg.sender != lpHelper) revert NotGovernance();
-        _;
-    }
 
     // ================= Constructor =================
     
-    constructor(address _gov, address _dev) {
+    constructor(address _gov) {
         governanceAddress = _gov;
-        DevAddress = _dev;
         currentDayStart = _calcCurrentDayStart(block.timestamp);
-        treasury = _gov;
-        auctionSchedule.scheduleSize = 3;
-        auctionSchedule.auctionDaysLimit = 1000;
+        auctionSchedule.scheduleSize = 2;
+        // Each token gets 20 auctions: 2 tokens × 20 = 40 total auction slots
+        auctionSchedule.auctionDaysLimit = auctionSchedule.scheduleSize * 20;
     }
 
     // ================= Core Auction Functions (Simplified) =================
     
-    function swapTokens(address user, address inputToken) public nonReentrant whenNotPaused {
+    function swapTokens() external nonReentrant whenNotPaused {
         _rollDailyIfNeeded();
+        
+        // Auto-detect today's token
+        (address inputToken, bool active) = getTodayToken();
+        if (!active || inputToken == address(0)) revert NoActiveAuction();
+        if (isReverseAuctionActive(inputToken)) revert ReverseAuctionActive();
+        
+        address user = msg.sender;
         
         // Validation
         _validateSwap(user, inputToken);
@@ -242,8 +212,8 @@ contract SWAP_V3 is Ownable(msg.sender), ReentrancyGuard, SwapErrors, SwapEvents
         
         if (!auctionSchedule.isAuctionActive(inputToken, block.timestamp, AuctionLib.AUCTION_DURATION)) 
             revert NotStarted();
-        if (userSwapInfo.hasSwapped) revert AlreadySwapped();
         
+        // Allow multiple swaps per cycle if user has STATE balance
         uint256 userStateFromBurn = userStateBalance[user][inputToken][currentAuctionCycle];
         if (userStateFromBurn == 0) revert Step2NotCompleted();
         
@@ -255,9 +225,12 @@ contract SWAP_V3 is Ownable(msg.sender), ReentrancyGuard, SwapErrors, SwapEvents
         uint256 amountOut = _executePoolSwap(user, inputToken, userStateFromBurn);
         if (amountOut == 0) revert AmountZero();
         
-        // Mark swap as completed
+        // Track tokens received from pool swap - cumulative for multiple swaps
+        normalAuctionSwapOutput[user][inputToken][currentAuctionCycle] += amountOut;
+        
+        // Mark swap as completed and deduct used STATE balance
         userSwapInfo.hasSwapped = true;
-        userStateBalance[user][inputToken][currentAuctionCycle] = 0;
+        userStateBalance[user][inputToken][currentAuctionCycle] -= userStateFromBurn;
         
         // Update daily tracking
         dailySwapsCount += 1;
@@ -272,8 +245,13 @@ contract SWAP_V3 is Ownable(msg.sender), ReentrancyGuard, SwapErrors, SwapEvents
         emit TokensSwapped(user, stateToken, inputToken, userStateFromBurn, amountOut);
     }
 
-    function burnTokensForState(address auctionToken) external nonReentrant whenNotPaused {
+    function burnTokensForState() external nonReentrant whenNotPaused {
         _rollDailyIfNeeded();
+        
+        // Auto-detect today's token
+        (address auctionToken, bool active) = getTodayToken();
+        if (!active || auctionToken == address(0)) revert NoActiveAuction();
+        if (isReverseAuctionActive(auctionToken)) revert ReverseAuctionActive();
         
         // User should already be registered from Step 1 (AirdropDistributor.claim)
         
@@ -287,8 +265,7 @@ contract SWAP_V3 is Ownable(msg.sender), ReentrancyGuard, SwapErrors, SwapEvents
         uint256 totalDavBalance = getDavBalance(msg.sender);
         if (totalDavBalance < MIN_DAV_REQUIRED) revert DavInsufficient();
         
-        if (hasUserBurnedTokens[msg.sender][auctionToken][currentCycle]) revert AlreadySwapped();
-        
+        // Allow multiple burns per cycle if user mints more DAV
         uint256 davAlreadyUsed = davTokensUsed[msg.sender][auctionToken][currentCycle];
         uint256 availableDav = totalDavBalance > davAlreadyUsed ? totalDavBalance - davAlreadyUsed : 0;
         
@@ -310,7 +287,11 @@ contract SWAP_V3 is Ownable(msg.sender), ReentrancyGuard, SwapErrors, SwapEvents
         uint256 stateToGive = NormalAuctionCalculations.calculateStateToGive(tokensToBurn, poolRatio);
         if (stateToGive == 0) revert AmountZero();
         
-        if (IERC20(stateToken).balanceOf(address(this)) < stateToGive) revert InsufficientVault();
+        // Deduct 0.5% auction fee from STATE output
+        uint256 auctionFee = (stateToGive * 50) / 10000; // 0.5% = 50/10000
+        stateToGive -= auctionFee;
+        
+        if (IERC20(stateToken).balanceOf(address(this)) < (stateToGive + auctionFee)) revert InsufficientVault();
         
         // Use library for burn execution
         BurnLib.BurnParams memory burnParams = BurnLib.BurnParams({
@@ -331,11 +312,23 @@ contract SWAP_V3 is Ownable(msg.sender), ReentrancyGuard, SwapErrors, SwapEvents
             TotalTokensBurned
         );
         
+        // Distribute auction fee to development wallets
+        _distributeAuctionFee(stateToken, auctionFee);
+        emit AuctionFeeCollected(stateToken, auctionFee, msg.sender);
+        
+        // Track cycle-wide STATE earned from normal auctions (per token)
+        cycleNormalStateEarned[msg.sender][auctionToken][currentCycle] += stateToGive;
+        
         emit TokensSwapped(msg.sender, auctionToken, stateToken, tokensToBurn, stateToGive);
     }
 
-    function reverseSwapTokensForState(address auctionToken, uint256 tokenAmount) external nonReentrant whenNotPaused {
+    function reverseSwapTokensForState(uint256 tokenAmount) external nonReentrant whenNotPaused {
         _rollDailyIfNeeded();
+        
+        // Auto-detect today's token
+        (address auctionToken, bool active) = getTodayToken();
+        if (!active || auctionToken == address(0)) revert NoActiveAuction();
+        if (!isReverseAuctionActive(auctionToken)) revert NormalAuctionActive();
         
         // Auto-register user if not already registered
         _autoRegisterUser(msg.sender);
@@ -347,10 +340,35 @@ contract SWAP_V3 is Ownable(msg.sender), ReentrancyGuard, SwapErrors, SwapEvents
         
         uint256 currentCycle = getCurrentAuctionCycle(auctionToken);
         
+        // Check if token has completed maximum cycles
+        if (currentCycle > MAX_CYCLES_PER_TOKEN) revert AuctionCyclesCompleted();
+        
         if (hasCompletedReverseStep1[msg.sender][auctionToken][currentCycle]) revert AlreadySwapped();
         
         uint256 davBalance = getDavBalance(msg.sender);
         if (davBalance < MIN_DAV_REQUIRED) revert DavInsufficient();
+        
+        // NEW: Calculate maximum allowed tokens from previous 3 normal auction cycles
+        uint256 maxAllowedTokens = 0;
+        uint256 lookbackCount = 3;
+        for (uint256 i = 1; i <= lookbackCount && currentCycle > i; i++) {
+            uint256 netTokens = calculateNetTokensFromNormalAuction(
+                msg.sender,
+                auctionToken,
+                currentCycle - i
+            );
+            maxAllowedTokens += netTokens;
+        }
+        
+        // User must have participated in at least one previous normal auction
+        if (maxAllowedTokens == 0) revert NoNormalAuctionParticipation();
+        
+        // NEW: Enforce token limit - user can only swap tokens they earned from auctions
+        // Even if user bought extra tokens from market, they can only use auction-earned tokens
+        if (tokenAmount > maxAllowedTokens) {
+            // Auto-adjust to maximum allowed instead of reverting
+            tokenAmount = maxAllowedTokens;
+        }
         
         if (tokenAmount == 0) revert AmountZero();
         
@@ -374,8 +392,13 @@ contract SWAP_V3 is Ownable(msg.sender), ReentrancyGuard, SwapErrors, SwapEvents
         emit TokensSwapped(msg.sender, auctionToken, stateToken, tokenAmount, stateOutput);
     }
 
-    function burnStateForTokens(address auctionToken, uint256 stateToBurn) external nonReentrant whenNotPaused {
+    function burnStateForTokens(uint256 stateToBurn) external nonReentrant whenNotPaused {
         _rollDailyIfNeeded();
+        
+        // Auto-detect today's token
+        (address auctionToken, bool active) = getTodayToken();
+        if (!active || auctionToken == address(0)) revert NoActiveAuction();
+        if (!isReverseAuctionActive(auctionToken)) revert NormalAuctionActive();
         
         if (!supportedTokens[auctionToken]) revert UnsupportedToken();
         if (stateToken == address(0)) revert StateNotSet();
@@ -387,12 +410,9 @@ contract SWAP_V3 is Ownable(msg.sender), ReentrancyGuard, SwapErrors, SwapEvents
         if (!hasCompletedReverseStep1[msg.sender][auctionToken][currentCycle]) revert Step1NotCompleted();
         if (hasCompletedReverseStep2[msg.sender][auctionToken][currentCycle]) revert AlreadySwapped();
         
-        uint256 stateFromStep1 = reverseStateBalance[msg.sender][auctionToken][currentCycle];
-        if (stateFromStep1 == 0) revert Step1NotCompleted();
-        
-        uint256 minimumBurn = ReverseAuctionCalculations.calculateMinimumBurn(stateFromStep1);
-        if (stateToBurn < minimumBurn) revert InsufficientBalance();
-        if (stateToBurn > stateFromStep1) revert InsufficientBalance();
+        // NEW: IGNORE user input - force burning EXACTLY the STATE received from reverse Step 1
+        // User must burn all STATE they got from swapping their auction tokens
+        stateToBurn = reverseStateBalance[msg.sender][auctionToken][currentCycle];
         if (stateToBurn == 0) revert AmountZero();
         
         uint256 userCurrentStateBalance = IERC20(stateToken).balanceOf(msg.sender);
@@ -404,7 +424,11 @@ contract SWAP_V3 is Ownable(msg.sender), ReentrancyGuard, SwapErrors, SwapEvents
         uint256 tokensToGive = ReverseAuctionCalculations.calculateTokensToGive(stateToBurn, poolRatio);
         if (tokensToGive == 0) revert AmountZero();
         
-        if (IERC20(auctionToken).balanceOf(address(this)) < tokensToGive) revert InsufficientVault();
+        // Deduct 0.5% auction fee from token output
+        uint256 auctionFee = (tokensToGive * 50) / 10000; // 0.5% = 50/10000
+        tokensToGive -= auctionFee;
+        
+        if (IERC20(auctionToken).balanceOf(address(this)) < (tokensToGive + auctionFee)) revert InsufficientVault();
         
         // Use library for reverse burn execution
         BurnLib.ReverseBurnParams memory reverseParams = BurnLib.ReverseBurnParams({
@@ -423,6 +447,10 @@ contract SWAP_V3 is Ownable(msg.sender), ReentrancyGuard, SwapErrors, SwapEvents
             TotalTokensBurned
         );
         
+        // Distribute auction fee to development wallets
+        _distributeAuctionFee(auctionToken, auctionFee);
+        emit AuctionFeeCollected(auctionToken, auctionFee, msg.sender);
+        
         emit TokensSwapped(msg.sender, stateToken, auctionToken, stateToBurn, tokensToGive);
     }
 
@@ -439,9 +467,6 @@ contract SWAP_V3 is Ownable(msg.sender), ReentrancyGuard, SwapErrors, SwapEvents
         
         (address todayToken, bool activeWindow) = auctionSchedule.getTodayToken(block.timestamp);
         if (!(activeWindow && todayToken == inputToken)) revert NotToday();
-        
-        uint256 dayIndex = auctionSchedule._currentDayIndex(block.timestamp);
-        if (dayIndex >= auctionSchedule.auctionDaysLimit) revert Ended();
 
         if (!isRegisteredForAuctions[user]) {
             if (totalRegisteredUsers >= maxAuctionParticipants) revert ParticipantCapReached();
@@ -513,7 +538,7 @@ contract SWAP_V3 is Ownable(msg.sender), ReentrancyGuard, SwapErrors, SwapEvents
      */
     function registerUserForAuctions(address user) external {
         // Only allow specific contracts to register users
-        require(msg.sender == airdropDistributor || msg.sender == address(this), "Unauthorized registration");
+        if (msg.sender != airdropDistributor && msg.sender != address(this)) revert UnauthorizedRegistration();
         _autoRegisterUser(user);
     }
 
@@ -619,6 +644,38 @@ contract SWAP_V3 is Ownable(msg.sender), ReentrancyGuard, SwapErrors, SwapEvents
 
     // ================= Reverse Auction View Functions =================
     
+    /**
+     * @notice Calculate net tokens user received from a specific normal auction cycle
+     * @param user User address
+     * @param token Token address
+     * @param cycle Auction cycle number
+     * @return netTokens Net tokens = airdrop + swapOutput - burned
+     */
+    function calculateNetTokensFromNormalAuction(
+        address user,
+        address token,
+        uint256 cycle
+    ) public view returns (uint256 netTokens) {
+        // Get DAV used in Step 2 (full precision, e.g., 5.3 DAV = 5.3e18)
+        uint256 davUsed = davTokensUsed[user][token][cycle];
+        
+        // Calculate airdrop from Step 1 (based on whole DAV units)
+        // AirdropDistributor uses: davUnits = activeDav / 1e18 (whole units only)
+        uint256 davWholeUnits = davUsed / 1e18;
+        uint256 airdropAmount = davWholeUnits * AIRDROP_PER_DAV; // 10,000 tokens per DAV
+        
+        // Get tokens burned in Step 2 (already tracked)
+        uint256 tokensBurned = tokensBurnedByUser[user][token][cycle];
+        
+        // Get tokens received from pool swap in Step 3 (newly tracked)
+        uint256 swapOutput = normalAuctionSwapOutput[user][token][cycle];
+        
+        // Calculate net tokens: airdrop + swap - burned
+        netTokens = airdropAmount + swapOutput - tokensBurned;
+        
+        return netTokens;
+    }
+    
     function hasUserCompletedReverseStep1(address user, address auctionToken) external view returns (bool) {
         uint256 currentCycle = getCurrentAuctionCycle(auctionToken);
         return hasCompletedReverseStep1[user][auctionToken][currentCycle];
@@ -665,6 +722,69 @@ contract SWAP_V3 is Ownable(msg.sender), ReentrancyGuard, SwapErrors, SwapEvents
         maxAllowed = maxAuctionParticipants;
         remaining = maxAllowed > totalEligible ? maxAllowed - totalEligible : 0;
     }
+    
+    /**
+     * @notice Get auction statistics for a specific token
+     * @param token Address of the token to query
+     * @return completedAuctions Number of auctions completed for this token (cycle number)
+     * @return maxAuctions Maximum number of auctions allowed per token (20)
+     * @return remainingAuctions Number of auctions remaining for this token
+     * @return isActive Whether the token is currently in an active auction
+     * @return isScheduled Whether the token is scheduled in the auction rotation
+     */
+    function getTokenAuctionStats(address token) external view returns (
+        uint256 completedAuctions,
+        uint256 maxAuctions,
+        uint256 remainingAuctions,
+        bool isActive,
+        bool isScheduled
+    ) {
+        // Get current cycle (this is the number of completed auctions)
+        completedAuctions = getCurrentAuctionCycle(token);
+        
+        // Max auctions per token is 20
+        maxAuctions = 20;
+        
+        // Calculate remaining auctions
+        remainingAuctions = completedAuctions >= maxAuctions ? 0 : maxAuctions - completedAuctions;
+        
+        // Check if currently active
+        isActive = isAuctionActive(token);
+        
+        // Check if scheduled (has a scheduledIndex > 0)
+        isScheduled = auctionSchedule.scheduledIndex[token] > 0;
+    }
+    
+    /**
+     * @notice Get global auction progress
+     * @return totalSlots Total number of auction slots that can be completed (scheduleSize × 20)
+     * @return completedSlots Number of auction slots completed so far
+     * @return remainingSlots Number of auction slots remaining
+     * @return auctionsEnded Whether all auctions have been completed
+     */
+    function getGlobalAuctionProgress() external view returns (
+        uint256 totalSlots,
+        uint256 completedSlots,
+        uint256 remainingSlots,
+        bool auctionsEnded
+    ) {
+        totalSlots = auctionSchedule.auctionDaysLimit; // scheduleSize × 20
+        
+        // Calculate completed slots
+        if (!auctionSchedule.scheduleSet || block.timestamp < auctionSchedule.scheduleStart) {
+            completedSlots = 0;
+        } else {
+            uint256 timeSinceStart = block.timestamp - auctionSchedule.scheduleStart;
+            uint256 slotDuration = AuctionLib.AUCTION_DURATION + AuctionLib.AUCTION_INTERVAL;
+            completedSlots = timeSinceStart / slotDuration;
+        }
+        
+        // Calculate remaining slots
+        remainingSlots = completedSlots >= totalSlots ? 0 : totalSlots - completedSlots;
+        
+        // Check if auctions have ended
+        auctionsEnded = completedSlots >= totalSlots;
+    }
 
     // ================= Admin Functions (Delegated) =================
     
@@ -674,11 +794,15 @@ contract SWAP_V3 is Ownable(msg.sender), ReentrancyGuard, SwapErrors, SwapEvents
      * @param symbol Token symbol
      * @return tokenAddress Address of the deployed token
      * @dev User only needs to provide name and symbol, function handles the rest
+     * @dev Can only deploy up to scheduleSize (2) tokens
      */
     function deployTokenOneClick(
         string memory name,
         string memory symbol
     ) external onlyGovernance returns (address tokenAddress) {
+        // Check if token limit reached
+        if (autoRegisteredTokens.length >= auctionSchedule.scheduleSize) revert TokenDeploymentLimitReached();
+        
         if (address(auctionAdmin) != address(0)) {
             tokenAddress = auctionAdmin.deployTokenOneClick(address(this), name, symbol);
             
@@ -726,15 +850,15 @@ contract SWAP_V3 is Ownable(msg.sender), ReentrancyGuard, SwapErrors, SwapEvents
         uint256 tokenAmount,
         uint256 stateAmount
     ) external onlyGovernance returns (address pair) {
-        require(token != address(0), "Invalid token");
-        require(tokenAmount > 0 && stateAmount > 0, "Invalid amounts");
-        require(stateToken != address(0), "STATE token not set");
-        require(pulseXRouter != address(0), "Router not set");
-        require(pulseXFactory != address(0), "Factory not set");
+        if (token == address(0)) revert InvalidToken();
+        if (tokenAmount == 0 || stateAmount == 0) revert InvalidAmounts();
+        if (stateToken == address(0)) revert StateNotSet();
+        if (pulseXRouter == address(0)) revert RouterNotSet();
+        if (pulseXFactory == address(0)) revert FactoryNotSet();
         
         // Check balances
-        require(IERC20(stateToken).balanceOf(address(this)) >= stateAmount, "Insufficient STATE");
-        require(IERC20(token).balanceOf(address(this)) >= tokenAmount, "Insufficient token");
+        if (IERC20(stateToken).balanceOf(address(this)) < stateAmount) revert InsufficientSTATE();
+        if (IERC20(token).balanceOf(address(this)) < tokenAmount) revert InsufficientToken();
         
         // Get or create the pair directly through PulseX
         IPulseXFactory factory = IPulseXFactory(pulseXFactory);
@@ -800,21 +924,19 @@ contract SWAP_V3 is Ownable(msg.sender), ReentrancyGuard, SwapErrors, SwapEvents
         return pair;
     }
 
-
-    function setAuctionSchedule(address[] calldata tokens, uint256 startAt) external onlyGovernance {
-        AuctionUtilsLib.setAuctionSchedule(auctionSchedule, tokens, startAt, supportedTokens);
-    }
-
     /**
      * @notice Start auction using auto-registered tokens from pool creation
+     * @dev Automatically calculates next Pakistan 11:30 PM as start time
      * @dev Uses tokens that were automatically registered during createPoolOneClick calls
-     * @param startAt Timestamp when auction should start (can be future time)
+     * @dev This is the ONLY function needed to start auctions - just click "Start Auction"
      */
-    function startAuctionWithAutoTokens(uint256 startAt) external onlyGovernance {
-        require(autoScheduleLocked, "Not all tokens registered yet");
-        require(autoRegisteredTokens.length > 0, "No auto-registered tokens");
-        require(!auctionSchedule.scheduleSet, "Auction schedule already set");
-        require(startAt >= block.timestamp, "Start time must be in future or now");
+    function startAuctionWithAutoTokens() external onlyGovernance {
+        if (!autoScheduleLocked) revert TokensNotRegistered();
+        if (autoRegisteredTokens.length == 0) revert NoAutoTokens();
+        if (auctionSchedule.scheduleSet) revert ScheduleAlreadySet();
+        
+        // Automatically calculate next Pakistan 11:00 PM time
+        uint256 startAt = TimeUtilsLib.calculateNextClaimStartPakistan(block.timestamp);
         
         // Use auto-registered tokens for auction schedule
         AuctionUtilsLib.setAuctionSchedule(
@@ -870,7 +992,7 @@ contract SWAP_V3 is Ownable(msg.sender), ReentrancyGuard, SwapErrors, SwapEvents
     // ================= Internal Helper Functions =================
     
     function _executePoolSwap(address user, address auctionToken, uint256 stateAmountIn) internal returns (uint256) {
-        require(pulseXRouter != address(0), "Router not set");
+        if (pulseXRouter == address(0)) revert RouterNotSet();
         
         // Transfer STATE tokens from user to this contract
         IERC20(stateToken).safeTransferFrom(user, address(this), stateAmountIn);
@@ -955,34 +1077,38 @@ contract SWAP_V3 is Ownable(msg.sender), ReentrancyGuard, SwapErrors, SwapEvents
     // ================= Internal State Setters for Admin Contract =================
     
     function _setPaused(bool _paused) external {
-        require(msg.sender == address(auctionAdmin), "Only admin");
+        if (msg.sender != address(auctionAdmin)) revert OnlyAdmin();
         paused = _paused;
     }
     
     function _setMaxAuctionParticipants(uint256 newMax) external {
-        require(msg.sender == address(auctionAdmin), "Only admin");
+        if (msg.sender != address(auctionAdmin)) revert OnlyAdmin();
         maxAuctionParticipants = newMax;
     }
     
     function _setDexAddresses(address _router, address _factory) external {
-        require(msg.sender == address(auctionAdmin), "Only admin");
+        if (msg.sender != address(auctionAdmin)) revert OnlyAdmin();
         pulseXRouter = _router;
         pulseXFactory = _factory;
     }
     
     function _setGovernance(address newGov) external {
-        require(msg.sender == address(auctionAdmin), "Only admin");
+        if (msg.sender != address(auctionAdmin)) revert OnlyAdmin();
         governanceAddress = newGov;
     }
     
     function _setPendingGovernance(address pending, uint256 timestamp) external {
-        require(msg.sender == address(auctionAdmin), "Only admin");
+        if (msg.sender != address(auctionAdmin)) revert OnlyAdmin();
         pendingGovernance = pending;
         governanceUpdateTimestamp = timestamp;
     }
     
     function _registerDeployedToken(address tokenAddress, string memory name, address deployer) external {
-        require(msg.sender == address(auctionAdmin), "Only admin");
+        if (msg.sender != address(auctionAdmin)) revert OnlyAdmin();
+        
+        // Check if token limit reached - cannot register more than scheduleSize tokens
+        if (autoRegisteredTokens.length >= auctionSchedule.scheduleSize) revert TokenDeploymentLimitReached();
+        
         tokenOwners[tokenAddress] = deployer;
         ownerToTokens[deployer].push(tokenAddress);
         userToTokenNames[deployer].push(name);
@@ -999,16 +1125,16 @@ contract SWAP_V3 is Ownable(msg.sender), ReentrancyGuard, SwapErrors, SwapEvents
     /// @notice Approve a spender to pull tokens from the SWAP vault (required by BuyAndBurnController)
     /// @dev Resets allowance to 0 before setting the new amount to comply with non-standard ERC20s
     function setVaultAllowance(address token, address spender, uint256 amount) external onlyGovernance nonReentrant {
-        require(token != address(0) && spender != address(0), "Zero address");
+        if (token == address(0) || spender == address(0)) revert ZeroAddr();
         _setExactAllowance(token, spender, amount);
     }
 
     /// @notice Batch-approve a single spender for multiple tokens from the SWAP vault
     function setVaultAllowances(address[] calldata tokens, address spender, uint256 amount) external onlyGovernance nonReentrant {
-        require(spender != address(0), "Zero spender address");
+        if (spender == address(0)) revert ZeroAddr();
         for (uint256 i = 0; i < tokens.length; i++) {
             address token = tokens[i];
-            require(token != address(0), "Zero token address");
+            if (token == address(0)) revert ZeroAddr();
             _setExactAllowance(token, spender, amount);
         }
     }
@@ -1019,13 +1145,13 @@ contract SWAP_V3 is Ownable(msg.sender), ReentrancyGuard, SwapErrors, SwapEvents
     /// @param recipient The address to receive the tokens
     /// @param amount The amount of tokens to distribute
     function distributeFromVault(address token, address recipient, uint256 amount) external onlyGovernance nonReentrant {
-        require(token != address(0), "Zero token address");
-        require(recipient != address(0), "Zero recipient address");
-        require(amount > 0, "Zero amount");
+        if (token == address(0)) revert ZeroAddr();
+        if (recipient == address(0)) revert ZeroAddr();
+        if (amount == 0) revert AmountZero();
         
         // Check vault balance
         uint256 vaultBalance = IERC20(token).balanceOf(address(this));
-        require(vaultBalance >= amount, "Insufficient vault balance");
+        if (vaultBalance < amount) revert InsufficientVault();
         
         // Direct transfer from vault to recipient
         IERC20(token).transfer(recipient, amount);
@@ -1039,20 +1165,20 @@ contract SWAP_V3 is Ownable(msg.sender), ReentrancyGuard, SwapErrors, SwapEvents
     /// @param recipients Array of recipient addresses
     /// @param amounts Array of amounts corresponding to each recipient
     function batchDistributeFromVault(address token, address[] calldata recipients, uint256[] calldata amounts) external onlyGovernance nonReentrant {
-        require(token != address(0), "Zero token address");
-        require(recipients.length == amounts.length, "Array length mismatch");
-        require(recipients.length > 0, "Empty arrays");
+        if (token == address(0)) revert ZeroAddr();
+        if (recipients.length != amounts.length) revert ArrayLengthMismatch();
+        if (recipients.length == 0) revert EmptyArrays();
         
         uint256 totalAmount = 0;
         for (uint256 i = 0; i < amounts.length; i++) {
-            require(recipients[i] != address(0), "Zero recipient address");
-            require(amounts[i] > 0, "Zero amount");
+            if (recipients[i] == address(0)) revert ZeroAddr();
+            if (amounts[i] == 0) revert AmountZero();
             totalAmount += amounts[i];
         }
         
         // Check vault balance for total amount
         uint256 vaultBalance = IERC20(token).balanceOf(address(this));
-        require(vaultBalance >= totalAmount, "Insufficient vault balance");
+        if (vaultBalance < totalAmount) revert InsufficientVault();
         
         // Execute all transfers
         for (uint256 i = 0; i < recipients.length; i++) {
@@ -1083,14 +1209,14 @@ contract SWAP_V3 is Ownable(msg.sender), ReentrancyGuard, SwapErrors, SwapEvents
         address _pulseXRouter,
         address _pulseXFactory
     ) external onlyGovernance nonReentrant {
-        require(_stateToken != address(0), "Invalid STATE token");
-        require(_davToken != address(0), "Invalid DAV token");
-        require(_lpHelper != address(0), "Invalid LP Helper");
-        require(_airdropDistributor != address(0), "Invalid airdrop distributor");
-        require(_auctionAdmin != address(0), "Invalid auction admin");
-        require(_buyBurnController != address(0), "Invalid buy burn controller");
-        require(_pulseXRouter != address(0), "Invalid PulseX router");
-        require(_pulseXFactory != address(0), "Invalid PulseX factory");
+        if (_stateToken == address(0)) revert StateNotSet();
+        if (_davToken == address(0)) revert InvalidParam();
+        if (_lpHelper == address(0)) revert InvalidParam();
+        if (_airdropDistributor == address(0)) revert InvalidParam();
+        if (_auctionAdmin == address(0)) revert InvalidParam();
+        if (_buyBurnController == address(0)) revert InvalidParam();
+        if (_pulseXRouter == address(0)) revert RouterNotSet();
+        if (_pulseXFactory == address(0)) revert FactoryNotSet();
         
         // Set all contract addresses
         stateToken = _stateToken;
@@ -1126,12 +1252,12 @@ contract SWAP_V3 is Ownable(msg.sender), ReentrancyGuard, SwapErrors, SwapEvents
      * @param tokens Array of token addresses to approve for airdrop
      */
     function setupTokenAllowancesForAirdrop(address[] calldata tokens) external onlyGovernance nonReentrant {
-        require(airdropDistributor != address(0), "Airdrop distributor not set");
+        if (airdropDistributor == address(0)) revert AirdropNotSet();
         
         for (uint256 i = 0; i < tokens.length; i++) {
             address token = tokens[i];
-            require(token != address(0), "Zero token address");
-            require(supportedTokens[token], "Token not supported");
+            if (token == address(0)) revert ZeroAddr();
+            if (!supportedTokens[token]) revert TokenNotSupported();
             
             // Reset approval to 0 first (for tokens that require it)
             IERC20(token).approve(airdropDistributor, 0);
@@ -1140,5 +1266,65 @@ contract SWAP_V3 is Ownable(msg.sender), ReentrancyGuard, SwapErrors, SwapEvents
         }
     }
 
-    // Additional view functions and events...
+    // ================= AUCTION FEE DISTRIBUTION =================
+    
+    /**
+     * @notice Internal function to distribute 0.5% auction fees to development wallets
+     * @param token Address of the token to distribute (STATE or auction token)
+     * @param feeAmount Amount of tokens to distribute as fee
+     * @dev Transfers fee to AuctionAdmin which handles distribution to dev wallets
+     */
+    function _distributeAuctionFee(address token, uint256 feeAmount) internal {
+        IERC20(token).transfer(address(auctionAdmin), feeAmount);
+        auctionAdmin.distributeFeeToWallets(token, feeAmount);
+    }
+    
+    // ================= LIQUIDITY MANAGEMENT =================
+    
+    /**
+     * @notice Add liquidity to existing pool from vault (governance-only)
+     * @param token Auction token address
+     * @param tokenAmount Token amount from vault
+     * @param stateAmount STATE amount from vault
+     * @return liquidity LP tokens burned
+     */
+    function addLiquidityToPool(
+        address token,
+        uint256 tokenAmount,
+        uint256 stateAmount
+    ) external onlyGovernance nonReentrant returns (uint256 liquidity) {
+        if (token == address(0)) revert ZeroAddr();
+        if (token == stateToken) revert InvalidParam();
+        if (tokenAmount == 0 || stateAmount == 0) revert AmountZero();
+        
+        address pool = IPulseXFactory(pulseXFactory).getPair(token, stateToken);
+        if (pool == address(0)) revert InvalidParam();
+        
+        if (IERC20(token).balanceOf(address(this)) < tokenAmount) revert InsufficientVault();
+        if (IERC20(stateToken).balanceOf(address(this)) < stateAmount) revert InsufficientVault();
+        
+        _setExactAllowance(token, pulseXRouter, tokenAmount);
+        _setExactAllowance(stateToken, pulseXRouter, stateAmount);
+        
+        (uint256 usedToken, uint256 usedState, uint256 lpAmount) = 
+            IPulseXRouter02(pulseXRouter).addLiquidity(
+                token,
+                stateToken,
+                tokenAmount,
+                stateAmount,
+                (tokenAmount * 95) / 100,
+                (stateAmount * 95) / 100,
+                BURN_ADDRESS,
+                block.timestamp + 3600
+            );
+        
+        if (lpAmount == 0) revert AmountZero();
+        
+        _setExactAllowance(token, pulseXRouter, 0);
+        _setExactAllowance(stateToken, pulseXRouter, 0);
+        
+        emit LiquidityAdded(token, pool, usedState, usedToken, lpAmount);
+        
+        return lpAmount;
+    }
 }

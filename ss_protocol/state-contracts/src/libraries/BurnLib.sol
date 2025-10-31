@@ -47,13 +47,11 @@ library BurnLib {
         require(params.tokensToBurn > 0, "BurnLib: Invalid burn amount");
         require(params.stateToGive > 0, "BurnLib: Invalid state amount");
         
-        // Check for double execution
-        require(!hasUserBurnedTokens[params.user][params.auctionToken][params.currentCycle], "BurnLib: Already burned in this cycle");
-        
+        // Allow multiple burns per cycle - accumulate values
         hasUserBurnedTokens[params.user][params.auctionToken][params.currentCycle] = true;
-        userStateBalance[params.user][params.auctionToken][params.currentCycle] = params.stateToGive;
-        tokensBurnedByUser[params.user][params.auctionToken][params.currentCycle] = params.tokensToBurn;
-        davTokensUsed[params.user][params.auctionToken][params.currentCycle] = params.availableDav;
+        userStateBalance[params.user][params.auctionToken][params.currentCycle] += params.stateToGive;
+        tokensBurnedByUser[params.user][params.auctionToken][params.currentCycle] += params.tokensToBurn;
+        davTokensUsed[params.user][params.auctionToken][params.currentCycle] += params.availableDav;
         
         // Burn the auction tokens (transfer to contract and track as permanently burned)
         IERC20(params.auctionToken).safeTransferFrom(params.user, address(this), params.tokensToBurn);
