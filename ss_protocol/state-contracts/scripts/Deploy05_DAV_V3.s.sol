@@ -10,12 +10,14 @@ contract Deploy05_DAV_V3 is Script {
     address constant STATE_V3_ADDRESS = 0x294a2db4E0c321AF7c2223e9ce19c0127F1424F2; // STATE_V3 from Deploy02
     address constant AUCTION_ADMIN_ADDRESS = 0x1734433003a15eD69d16C5Db2DD8Cc8F8df05dC0; // AuctionAdmin from Deploy03
     address constant BUY_AND_BURN_ADDRESS = 0xD16798A26Fdf17AC7D0A45761ce071C1cE3b4073; // BuyAndBurn from Deploy04
+    address constant SWAP_V3_ADDRESS = 0x1062D1bBD322781Be2a701698e8DD62E4D3aBCd4; // SWAP_V3 from Deploy01
     address constant GOV_ADDRESS = 0xBAaB2913ec979d9d21785063a0e4141e5B787D28;
 
     function run() external {
         require(STATE_V3_ADDRESS != address(0), "Must update STATE_V3_ADDRESS first");
         require(AUCTION_ADMIN_ADDRESS != address(0), "Must update AUCTION_ADMIN_ADDRESS first");
         require(BUY_AND_BURN_ADDRESS != address(0), "Must update BUY_AND_BURN_ADDRESS first");
+        require(SWAP_V3_ADDRESS != address(0), "Must update SWAP_V3_ADDRESS first");
         
         console.log("=== DEPLOYING DAV_V3 CONTRACT ===");
         console.log("Chain ID:", block.chainid);
@@ -25,6 +27,7 @@ contract Deploy05_DAV_V3 is Script {
         console.log("Governance Address:", GOV_ADDRESS);
         console.log("AuctionAdmin Address:", AUCTION_ADMIN_ADDRESS);
         console.log("BuyAndBurnController Address:", BUY_AND_BURN_ADDRESS);
+        console.log("SWAP_V3 Address:", SWAP_V3_ADDRESS);
         console.log("");
 
         vm.startBroadcast();
@@ -35,6 +38,7 @@ contract Deploy05_DAV_V3 is Script {
             GOV_ADDRESS,              // _gov
             AUCTION_ADMIN_ADDRESS,    // _auctionAdmin (for dev fee wallet registry)
             BUY_AND_BURN_ADDRESS,     // _buyAndBurnController (receives 80% liquidity + ROI calculation)
+            SWAP_V3_ADDRESS,          // _swapContract (for ROI calculations)
             "PulseDAV",              // tokenName
             "pDAV"                   // tokenSymbol
         );
@@ -63,11 +67,7 @@ contract Deploy05_DAV_V3 is Script {
         console.log("");
         console.log("IMPORTANT: DAV minting is DISABLED until development wallets are configured in AuctionAdmin");
         console.log("");
-        console.log("NEXT STEP: Deploy LPHelper:");
-        console.log("forge script temp_scripts/Deploy06_LPHelper.s.sol:Deploy06_LPHelper");
-        console.log("  --rpc-url https://rpc.pulsechain.com");
-        console.log("  --private-key $PRIVATE_KEY");
-        console.log("  --broadcast");
-        console.log("  --legacy");
+        console.log("Deployment complete! DAV_V3 is ready to use.");
+        console.log("Note: LPHelper is no longer used - use SWAP_V3.createPoolOneClick() directly for pool creation");
     }
 }

@@ -28,8 +28,7 @@ contract Deploy04_BuyAndBurnController is Script {
         console.log("WPLS Token:", WPLS);
         console.log("PulseX Router:", PULSEX_ROUTER);
         console.log("PulseX Factory:", PULSEX_FACTORY);
-        console.log("SWAP Vault:", SWAP_V3_ADDRESS);
-        console.log("SWAP Contract:", SWAP_V3_ADDRESS);
+        console.log("SWAP_V3 Contract:", SWAP_V3_ADDRESS);
         console.log("");
 
         vm.startBroadcast();
@@ -40,8 +39,7 @@ contract Deploy04_BuyAndBurnController is Script {
             WPLS,              // _wpls  
             PULSEX_ROUTER,     // _router
             PULSEX_FACTORY,    // _factory
-            SWAP_V3_ADDRESS,   // _swapVault
-            SWAP_V3_ADDRESS    // _swap
+            SWAP_V3_ADDRESS    // _swapV3 (SWAP_V3 contract address)
         );
         
         console.log("SUCCESS: BuyAndBurnController_V2 deployed at:", address(buyAndBurnController));
@@ -61,7 +59,7 @@ contract Deploy04_BuyAndBurnController is Script {
         console.log("- WPLS Token:", WPLS);
         console.log("- PulseX Router:", PULSEX_ROUTER);
         console.log("- PulseX Factory:", PULSEX_FACTORY);
-        console.log("- SWAP Vault:", SWAP_V3_ADDRESS);
+        console.log("- SWAP_V3 Contract:", SWAP_V3_ADDRESS);
         console.log("- Owner:", GOV_ADDRESS);
         console.log("");
         console.log("NEXT STEP: Deploy DAV_V3:");

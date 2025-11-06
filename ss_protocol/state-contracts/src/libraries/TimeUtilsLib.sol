@@ -3,8 +3,8 @@ pragma solidity ^0.8.20;
 
 library TimeUtilsLib {
     uint256 internal constant SECONDS_IN_DAY = 86400;
-    // Legacy defaults (kept for backward compatibility): 15:00 GMT
-    uint256 internal constant TARGET_GMT_HOUR = 15;
+    // Default time boundary: 17:00 GMT+3 (5:00 PM GMT+3)
+    uint256 internal constant TARGET_GMT_HOUR = 17;
     uint256 internal constant TARGET_GMT_MINUTE = 0;
 
     /// @dev Lightweight parameter validation to avoid pathological inputs.
@@ -81,20 +81,22 @@ library TimeUtilsLib {
     }
 
     /**
-     * @notice Convenience helper for next 15:00 at GMT+3 (UTC+3).
+     * @notice Convenience helper for next 17:00 at GMT+3 (UTC+3) - 5:00 PM GMT+3
      */
-    /// @notice Convenience helper for next 15:00 at GMT+3 (UTC+3).
-    /// @dev 15:00 in GMT+3 corresponds to 12:00 UTC.
+    /// @notice Convenience helper for next 17:00 at GMT+3 (UTC+3) - 5:00 PM GMT+3
+    /// @dev 17:00 in GMT+3 corresponds to 14:00 UTC (2:00 PM UTC).
     function calculateNextClaimStartGMTPlus3(uint256 blockTimestamp)
         internal
         pure
         returns (uint256)
     {
-        return calculateNextClaimStartTZ(blockTimestamp, int256(3), 15, 0);
+        return calculateNextClaimStartTZ(blockTimestamp, int256(3), 17, 0);
     }
 
+    /// @notice LEGACY FUNCTION - Not used in current protocol (kept for backward compatibility)
     /// @notice Pakistan Standard Time (UTC+5) - 23:00 local (11:00 PM)
     /// @dev 11:00 PM in PKT (UTC+5) corresponds to 18:00 UTC (6:00 PM UTC same day)
+    /// @dev Use calculateNextClaimStartGMTPlus3() for all protocol operations instead
     function calculateNextClaimStartPakistan(uint256 blockTimestamp) internal pure returns (uint256) {
         return calculateNextClaimStartTZ(blockTimestamp, int256(5), 23, 0);
     }

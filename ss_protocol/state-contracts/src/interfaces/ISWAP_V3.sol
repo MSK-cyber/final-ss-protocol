@@ -8,7 +8,6 @@ interface ISWAP_V3 {
     function governanceUpdateTimestamp() external view returns (uint256);
     function paused() external view returns (bool);
     function maxAuctionParticipants() external view returns (uint256);
-    function lpHelper() external view returns (address);
     function treasury() external view returns (address);
     function davToken() external view returns (address);
     function stateToken() external view returns (address);

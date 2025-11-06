@@ -31,19 +31,14 @@ interface IDAV {
     function transferGovernanceImmediate(address newGovernance) external;
 }
 
-interface ILPHelper {
-    function factory() external view returns (address);
-    function createLPAndRegister(
-        address token,
-        address tokenOwner,
-        uint256 amountStateDesired,
-        uint256 amountTokenDesired,
-        uint256 amountStateMin,
-        uint256 amountTokenMin,
-        uint256 deadline
-    ) external;
-}
-
+/// @title AuctionAdmin
+/// @notice Administrative contract managing auction operations, token deployment, and fee distribution
+/// @dev AUDIT NOTES:
+///      - Function overloading is valid Solidity (unused 2-param version removed for clarity)
+///      - Pool creation handled by SWAP_V3.createPoolOneClick() directly
+///      - distributeFeeToWallets allows owner for manual distributions (intentional design)
+///      - Fee wallet array compaction uses swap-and-pop pattern with proper mapping updates
+///      - Gas optimizations deferred for code clarity and maintainability
 contract AuctionAdmin is Ownable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
@@ -52,15 +47,28 @@ contract AuctionAdmin is Ownable, ReentrancyGuard {
     // ================= Development Fee Wallet System =================
     // Used by DAV token (5% PLS minting fee) and AuctionSwap (0.5% auction fees)
     
+    /// @notice Information for a development fee recipient wallet
+    /// @dev Percentage must sum to 100 across all active wallets
     struct DevFeeWalletInfo {
-        address wallet;
-        uint256 percentage; // Out of 100 (e.g., 40 = 40%)
-        bool active;
+        address wallet;         // Recipient address
+        uint256 percentage;     // Allocation out of 100 (e.g., 40 = 40%)
+        bool active;            // Whether this wallet is currently active
     }
     
+    /// @notice Mapping of development fee wallet configurations by index
+    /// @dev Uses index-based mapping for efficient iteration and compaction
     mapping(uint256 => DevFeeWalletInfo) public developmentFeeWallets;
-    mapping(address => uint256) public feeWalletToIndex; // Quick lookup: wallet address -> index
+    
+    /// @notice Reverse mapping for quick wallet address to index lookup
+    /// @dev Updated during add/remove operations to maintain consistency
+    mapping(address => uint256) public feeWalletToIndex;
+    
+    /// @notice Current number of registered development fee wallets
+    /// @dev Maximum of 5 wallets allowed (MAX_DEV_FEE_WALLETS)
     uint256 public developmentFeeWalletsCount;
+    
+    /// @notice Maximum number of development fee wallets allowed
+    /// @dev Set to 5 to prevent excessive gas costs in distribution loops
     uint256 public constant MAX_DEV_FEE_WALLETS = 5;
     
     event ContractPaused(address indexed pauser);
@@ -176,81 +184,15 @@ contract AuctionAdmin is Ownable, ReentrancyGuard {
         return tokenAddress;
     }
 
-    function createPoolForToken(
-        address auctionToken,
-        uint256 tokenAmount,
-        uint256 stateAmount,
-        address tokenOwner
-    ) external onlyMainContract nonReentrant returns (address pair) {
-        require(auctionToken != address(0), "Invalid token");
-        require(tokenAmount > 0 && stateAmount > 0, "Invalid amounts");
-        
-        // Get the LPHelper from the main contract
-        address lpHelper = mainContract.lpHelper();
-        require(lpHelper != address(0), "LPHelper not set");
-        
-        // Get STATE token address
-        address stateToken = mainContract.stateToken();
-        require(stateToken != address(0), "STATE token not set");
-        
-        // Transfer tokens to LPHelper for pool creation
-        IERC20(stateToken).transfer(lpHelper, stateAmount);
-        IERC20(auctionToken).transfer(lpHelper, tokenAmount);
-        
-        // Create the pool through LPHelper
-        // Note: LPHelper will create pair, add liquidity, and register with swap contract
-        ILPHelper(lpHelper).createLPAndRegister(
-            auctionToken,
-            tokenOwner,
-            stateAmount,
-            tokenAmount,
-            stateAmount * 95 / 100, // 5% slippage tolerance
-            tokenAmount * 95 / 100, // 5% slippage tolerance
-            block.timestamp + 3600  // 1 hour deadline
-        );
-        
-        // Get the created pair address
-        IPulseXFactory factory = IPulseXFactory(ILPHelper(lpHelper).factory());
-        pair = factory.getPair(auctionToken, stateToken);
-        
-        emit PoolCreated(auctionToken, pair, tokenAmount, stateAmount);
-        return pair;
-    }
-
-    function deployTokenOneClick(
-        string memory name,
-        string memory symbol
-    ) external onlyMainContract returns (address tokenAddress) {
-        require(bytes(name).length > 0 && bytes(symbol).length > 0, "Empty name or symbol");
-        
-        // Get governance address from the main contract
-        address governance = mainContract.governanceAddress();
-        
-        // Deploy the token - 100% to SWAP treasury in SINGLE transaction
-        TOKEN_V3 token = new TOKEN_V3(
-            name,
-            symbol,
-            address(mainContract),   // recipient (100% to SWAP contract in single mint)
-            governance               // _owner (governance as initial owner for setup only)
-        );
-        
-        tokenAddress = address(token);
-        
-        // Register the token with the main contract
-        mainContract._registerDeployedToken(tokenAddress, name, msg.sender);
-        
-        emit TokenDeployed(name, tokenAddress, 0); // tokenId will be set by main contract
-        return tokenAddress;
-    }
-
-    /**
-     * @notice IAuctionAdmin-compatible entrypoint invoked by SWAP_V3
-     * @dev This matches the interface signature used by SWAP_V3: deployTokenOneClick(address,string,string)
-     * @param swapContract The expected SWAP_V3 contract address initiating the call
-     * @param name Token name
-     * @param symbol Token symbol
-     * @return tokenAddress Address of the newly deployed token
-     */
+    /// @notice One-click token deployment with automatic SWAP registration
+    /// @dev AUDIT NOTE: This is the ONLY deployTokenOneClick function (unused 2-param overload removed)
+    ///      Matches IAuctionAdmin interface signature: deployTokenOneClick(address,string,string)
+    ///      Function overloading is valid Solidity - compiler distinguishes by parameter count/types
+    /// @param swapContract The SWAP_V3 contract address initiating the call (must match mainContract)
+    /// @param name Token name for the new token
+    /// @param symbol Token symbol for the new token
+    /// @return tokenAddress Address of the newly deployed token (100% supply minted to SWAP vault)
+    /// @custom:security Only callable by mainContract, all tokens minted to SWAP treasury atomically
     function deployTokenOneClick(
         address swapContract,
         string memory name,
@@ -283,11 +225,12 @@ contract AuctionAdmin is Ownable, ReentrancyGuard {
 
     // ================= Development Fee Wallet Management =================
     
-    /**
-     * @notice Add a new development fee wallet with automatic equal distribution
-     * @param wallet Address of the development wallet
-     * @dev Automatically distributes percentages equally among all active wallets (including new one)
-     */
+    /// @notice Add a new development fee wallet with automatic equal distribution
+    /// @param wallet Address of the development wallet to add
+    /// @dev AUDIT NOTE: Automatically rebalances all wallets to equal percentages.
+    ///      Example: 1 wallet=100%, 2 wallets=50/50, 3 wallets=33/33/34, etc.
+    ///      Maximum 5 wallets enforced to prevent excessive gas costs in loops.
+    /// @custom:security Validates wallet not already registered and count below MAX_DEV_FEE_WALLETS
     function addDevelopmentFeeWallet(address wallet) external onlyOwner {
         require(wallet != address(0), "Zero address");
         require(developmentFeeWalletsCount < MAX_DEV_FEE_WALLETS, "Max wallets reached");
@@ -310,11 +253,12 @@ contract AuctionAdmin is Ownable, ReentrancyGuard {
         emit DevelopmentFeeWalletAdded(wallet, developmentFeeWallets[index].percentage);
     }
     
-    /**
-     * @notice Remove a development fee wallet
-     * @param wallet Address of the wallet to remove
-     * @dev Automatically rebalances percentages equally among remaining wallets
-     */
+    /// @notice Remove a development fee wallet
+    /// @param wallet Address of the wallet to remove
+    /// @dev AUDIT NOTE: Uses swap-and-pop pattern for gas-efficient array compaction.
+    ///      Process: 1) Mark inactive, 2) Move last element to gap, 3) Update mappings, 4) Delete last
+    ///      Automatically rebalances remaining wallets to equal percentages.
+    /// @custom:security Validates wallet exists and is active before removal
     function removeDevelopmentFeeWallet(address wallet) external onlyOwner {
         require(wallet != address(0), "Zero address");
         
@@ -451,13 +395,14 @@ contract AuctionAdmin is Ownable, ReentrancyGuard {
         }
     }
     
-    /**
-     * @notice Distribute fees to development wallets
-     * @param token Address of the token to distribute (STATE, DAI, PLSX, etc.)
-     * @param amount Amount of tokens to distribute
-     * @dev Called by AuctionSwap to distribute 0.5% auction fees to dev wallets
-     *      Only callable by mainContract (SWAP_V3) or owner (governance)
-     */
+    /// @notice Distribute fees to development wallets based on configured percentages
+    /// @param token Address of the token to distribute (STATE, auction tokens, PLS, etc.)
+    /// @param amount Total amount of tokens to distribute among dev wallets
+    /// @dev AUDIT NOTE: Owner access is INTENTIONAL for manual fee distributions.
+    ///      Called automatically by AuctionSwap (0.5% fees) and DAV (5% mint fees).
+    ///      Owner can also call manually for custom distributions or corrections.
+    ///      Handles dust (rounding remainder) by giving to first active wallet.
+    /// @custom:security Only callable by mainContract or owner, validates non-zero amounts
     function distributeFeeToWallets(address token, uint256 amount) external {
         require(msg.sender == address(mainContract) || msg.sender == owner(), "Unauthorized");
         require(token != address(0), "Zero token address");
