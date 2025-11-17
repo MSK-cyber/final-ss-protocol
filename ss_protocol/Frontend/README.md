@@ -1,91 +1,174 @@
-# SS Protocol Setup Plan
+# State Protocol - Frontend Setup
 
-This document outlines the plan to set up the frontend and smart contracts for the SS Protocol project.
+This document provides setup instructions for the State Protocol frontend application.
 
 ## Prerequisites
 
-- Install Node.js and npm for frontend development.
-- Install Git for cloning the repository.
-- Install Foundry for smart contract development (ensure `forge` is available).
-- Use a code editor (e.g., VS Code) to manage environment variables.
-- Obtain API keys and configuration details for Auth, Reown, and Pinata.
+- Node.js 18+ and npm
+- Git
+- Foundry (for smart contract development)
+- Code editor (VS Code recommended)
+- Wallet browser extension (MetaMask, Rabby, etc.)
 
-## Frontend Setup Plan
+## Quick Start
 
 ### Clone the Repository
 
-Clone the SS Protocol repository from GitHub:
+Clone the State Protocol repository from GitHub:
 
 ```bash
-git clone https://github.com/RutvikGujarati/ss_protocol.git
+git clone https://github.com/MSK-cyber/final-ss-protocol.git
 ```
 
-### Navigate to the Project Directory
+### Navigate to the Frontend Directory
 
-Move into the cloned `ss_protocol\Frontend` directory:
+Move into the Frontend directory:
 
 ```bash
-cd ss_protocol\Frontend
+cd final-ss-protocol/ss_protocol/Frontend
 ```
 
 ### Install Dependencies
 
-Install the required npm packages for the frontend:
+Install the required npm packages:
 
 ```bash
-npm i
+npm install
 ```
 
 ### Configure Environment Variables
 
-Create a `.env` file in the `Frontend` directory with at least these required variables:
+Create a `.env.local` file in the `Frontend` directory with the following variables:
 
 ```env
-VITE_AUTH_ADDRESS="0x98b0379474Cf84Ab257bEe0b73dceb11051223A5"
-VITE_REOWN_PROJECT_ID="7aeb0b1e4f909129e60fbdb7a7b3f608"
-```
+# Required - Wallet Connection
+VITE_REOWN_PROJECT_ID="your_reown_project_id_here"
 
-Pinata is optional (only needed if you want to upload token images via the UI). To enable image uploads, add and fill these:
+# Optional - Governance Address Override (for testing)
+# VITE_GOVERNANCE_ADDRESS="0xYourGovernanceAddressHere"
 
-```env
+# Optional - Pinata IPFS (for token image uploads)
 # VITE_PINATA_API_KEY=""
 # VITE_PINATA_SECRET_API_KEY=""
-# VITE_PINATA_GATEWAY="https://gold-favourable-bonobo-219.mypinata.cloud/ipfs/"
+# VITE_PINATA_GATEWAY="https://your-gateway.mypinata.cloud/ipfs/"
 ```
 
-If Pinata values are omitted, the app will disable image uploads and allow emoji-only token creation.
+**Note:** 
+- Get your Reown Project ID from [Reown Cloud](https://cloud.reown.com/)
+- Pinata configuration is optional - if omitted, token creation will use emojis instead of images
+- `VITE_GOVERNANCE_ADDRESS` is for development/testing only - production uses on-chain governance
 
 ### Run the Development Server
 
-Start the frontend development server:
+Start the Vite development server:
 
 ```bash
 npm run dev
 ```
 
-Access the application at the provided local URL (typically `http://localhost:5173`).
+The application will be available at `http://localhost:5173`
 
-## Smart Contracts Setup Plan
+### Build for Production
 
-### Navigate to the Contracts Directory
-
-Move to the `state-contracts` directory from the project root:
+Create an optimized production build:
 
 ```bash
-cd ..
-cd state-contracts
+npm run build
 ```
 
-### Install Foundry Dependencies
+The build output will be in the `dist/` directory.
 
-Install the necessary dependencies for smart contracts using Foundry:
+## Features
+
+- **Live Auction Dashboard** - Real-time auction status and participation
+- **DAV Token Minting** - Mint DAV tokens to access auctions
+- **Portfolio Tracker** - View your holdings and ROI across all auction tokens
+- **Airdrop Claims** - Claim your 10,000 token airdrop per DAV unit
+- **Normal Auctions** - Burn 30% of tokens for 2x STATE
+- **Reverse Auctions** - Swap tokens for STATE, then burn for 2x tokens
+- **Holder Rewards** - Claim accumulated DAV holder rewards
+- **Admin Console** - Governance-only access for protocol management
+
+## Tech Stack
+
+- **React 18** - UI framework
+- **Vite** - Build tool and dev server
+- **Wagmi v2** - Ethereum React hooks
+- **RainbowKit** - Wallet connection UI
+- **TailwindCSS** - Styling
+- **Ethers.js v6** - Ethereum library
+
+## Smart Contracts Setup
+
+### Navigate to Contracts Directory
+
+```bash
+cd ../state-contracts
+```
+
+### Install Dependencies
 
 ```bash
 forge install
 ```
 
-## Notes
+### Build Contracts
 
-- Verify that all environment variables are correctly configured in the `.env` file before starting the frontend server.
-- Ensure Foundry is properly installed and configured for smart contract development.
-- Refer to the official documentation for Node.js, Foundry, or the SS Protocol repository for troubleshooting.
+```bash
+forge build
+```
+
+### Run Tests
+
+```bash
+forge test
+```
+
+For detailed deployment instructions, see the main [README.md](../../README.md) in the repository root.
+
+## Configuration
+
+Contract addresses are configured in `src/Constants/ContractAddresses.js`. Update these after deploying contracts:
+
+```javascript
+export const CONTRACT_ADDRESSES = {
+  369: { // PulseChain Mainnet
+    AUCTION: "0xYourSwapV3Address",
+    STATE: "0xYourStateV3Address",
+    DAV: "0xYourDavV3Address",
+    AIRDROP_DISTRIBUTOR: "0xYourAirdropAddress",
+    AUCTION_ADMIN: "0xYourAuctionAdminAddress",
+    BUY_BURN_CONTROLLER: "0xYourBuyBurnAddress",
+    SWAP_LENS: "0xYourSwapLensAddress"
+  }
+};
+```
+
+## Troubleshooting
+
+**Wallet Connection Issues:**
+- Ensure you have a Web3 wallet extension installed
+- Check that you're connected to PulseChain (Chain ID: 369)
+- Try refreshing the page or reconnecting your wallet
+
+**Build Errors:**
+- Clear node_modules: `rm -rf node_modules package-lock.json && npm install`
+- Ensure Node.js version is 18 or higher: `node --version`
+
+**Contract Interaction Errors:**
+- Verify contract addresses in `ContractAddresses.js`
+- Check that ABIs in `src/ABI/` match deployed contracts
+- Ensure you have sufficient PLS for gas fees
+
+## Contributing
+
+This is a decentralized protocol with renounced ownership on core contracts. Community contributions are welcome via pull requests.
+
+## License
+
+MIT License - see [LICENSE](../../../LICENSE) for details
+
+## Support
+
+- **Repository:** https://github.com/MSK-cyber/final-ss-protocol
+- **Issues:** https://github.com/MSK-cyber/final-ss-protocol/issues
