@@ -1,0 +1,116 @@
+/* For Chrome, Safari, Edge, Opera */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* For Firefox */
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+.token-select-btn {
+  background: #23263a;
+  border: 1px solid #23263a;
+  border-radius: 10px;
+  height: 38px;
+  min-width: 80px;
+  width: auto;
+  padding: 0 12px;
+  font-weight: 700;
+  color: #fff;
+  font-size: 1.05rem;
+  display: flex;
+  align-items: center;
+  box-shadow: none;
+  outline: none;
+  position: relative;
+  cursor: pointer;
+}
+
+.card-container {
+  width: 480px;
+  min-height: 200px;
+  max-width: 100%;
+  margin-top: 25px;
+  display: flex;
+  flex-direction: column;
+  justify-content: stretch;
+}
+
+.swap-container {
+  font-family: "Inter", sans-serif;
+  padding: 0;
+  margin: 0;
+  box-sizing: border-box;
+  overflow-y: visible;
+  transition: all 0.3s;
+  padding-bottom: 56px; /* Ensures content above the footer is visible */
+}
+
+.swap-flex-container {
+  min-height: 100vh;
+  gap: 32px;
+  max-width: 100%;
+}
+
+.swap-card {
+  background: #212529;
+  color: #fff;
+  border-radius: 20px;
+  padding: 24px;
+  margin: 0;
+  transition: margin 0.3s;
+  border: 1px solid #ffffff26;
+}
+
+.detail-text {
+  font-family: "Satoshi", sans-serif;
+  font-size: 13px;
+  text-transform: uppercase;
+}
+
+.swap-amount-input {
+  box-shadow: none !important;
+  color: #343a40 !important;
+}
+
+.swap-output-input {
+  font-size: 1.15rem !important;
+  background: #343a40 !important;
+}
+
+.price-difference-container {
+  font-size: 0.9rem;
+}
+
+.network-fee-container {
+  font-size: 0.9rem;
+}
+
+.confirmation-modal {
+  background-color: rgba(0, 0, 0, 0.7);
+  z-index: 3000;
+}
+
+.confirmation-modal-content {
+  max-width: 350px;
+  width: 90%;
+}
+
+
+@media (max-width: 600px) {
+  .card-container {
+    width: 100% !important;
+    min-height: 180px;
+    max-width: 500px;
+  }
+}
+
+.text-pink {
+  color: #ff4081 !important;
+}
+.font-weight-bold {
+  font-weight: normal !important;
+}

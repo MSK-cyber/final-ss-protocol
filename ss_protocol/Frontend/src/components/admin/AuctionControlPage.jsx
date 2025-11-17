@@ -1,11 +1,11 @@
 import React, { useEffect, useState } from "react";
 import { useContractContext } from "../../Functions/useContractContext";
 import { ethers } from "ethers";
+import { toast } from "react-hot-toast";
 
 export default function AuctionControlPage() {
   const { AuctionContract, SwapLens } = useContractContext();
   const [loading, setLoading] = useState(false);
-  const [startAt, setStartAt] = useState("");
   const [status, setStatus] = useState({ scheduled: false, start: 0, daysLimit: 0, count: 0 });
 
   const loadStatus = async () => {
@@ -29,58 +29,80 @@ export default function AuctionControlPage() {
 
   const startAuction = async (e) => {
     e.preventDefault();
-    if (!AuctionContract) return alert("Auction contract not ready");
-    let ts;
-    try {
-      ts = startAt ? BigInt(Math.floor(new Date(startAt).getTime() / 1000)) : BigInt(Math.floor(Date.now() / 1000));
-    } catch {
-      ts = BigInt(Math.floor(Date.now() / 1000));
+    if (!AuctionContract) {
+      toast.error("Auction contract not ready", { duration: 5000 });
+      return;
     }
     setLoading(true);
     try {
-      const tx = await AuctionContract.startAuctionWithAutoTokens(ts);
-      alert(`Start auction tx: ${tx.hash}`);
+  // Contract calculates next Pakistan 11:00 PM internally; no params needed
+      const tx = await AuctionContract.startAuctionWithAutoTokens();
+      toast.success(`Start auction tx sent: ${tx.hash}`, { duration: 12000 });
       await tx.wait();
+      toast.success("Auction system started successfully", { duration: 12000 });
       await loadStatus();
     } catch (err) {
-      alert(err.message || "Failed to start auction");
+      toast.error(err?.shortMessage || err?.message || "Failed to start auction", { duration: 5000 });
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="card">
-      <div className="card-header">
-        <h5 className="card-title mb-0">🎯 Step 5: Auction Control</h5>
-        <small className="text-muted">Monitor auction system and start auctions</small>
-      </div>
-      <div className="card-body">
-        <div className="row g-3 align-items-end mb-3">
-          <div className="col-md-6">
-            <label className="form-label">Start Time (optional)</label>
-            <input type="datetime-local" className="form-control" value={startAt} onChange={(e)=>setStartAt(e.target.value)} />
-            <small className="text-muted">Leave empty to start now</small>
-          </div>
-          <div className="col-md-3">
-            <button className="btn btn-primary w-100" onClick={startAuction} disabled={loading || !AuctionContract}>
-              {loading ? <><span className="spinner-border spinner-border-sm me-2"/>Starting...</> : "Start Auction"}
-            </button>
-          </div>
+    <>
+      {/* Overview Card */}
+      <div className="card mb-4">
+        <div className="card-header">
+          <h5 className="card-title mb-1">🎯 AUCTION CONTROL</h5>
         </div>
+        <div className="card-body">
+          {/* System Status Banner removed per request */}
 
-        <div className="card">
-          <div className="card-body">
-            <h6>Schedule Status</h6>
-            <ul className="mb-0">
-              <li>Scheduled: {status.scheduled ? "Yes" : "No"}</li>
-              <li>Start: {status.start ? new Date(status.start * 1000).toLocaleString() : "-"}</li>
-              <li>Days Limit: {status.daysLimit || "-"}</li>
-              <li>Registered Tokens: {status.count}</li>
-            </ul>
+          {/* Start Auction Form */}
+          <div className="card bg-primary bg-opacity-10 border-primary">
+            <div className="card-body">
+              <h6 className="mb-3">
+                <i className="bi bi-play-circle-fill me-2"></i>
+                START AUCTION SYSTEM
+              </h6>
+              <form onSubmit={startAuction}>
+                <div className="row g-3 align-items-center">
+                  <div className="col-md-9">
+                    <div className="alert alert-info mb-0">
+                      <div>
+                        <i className="bi bi-clock-history me-2"></i>
+                        <strong>Auto-Scheduled Start Time:</strong> 9:00 PM GMT+2
+                      </div>
+                      <small className="d-block mt-1">The auction will automatically start at 9:00 PM GMT+2 (Nov 11, 2025 - 19:00 UTC)</small>
+                    </div>
+                  </div>
+                  <div className="col-md-3">
+                    <button 
+                      className="btn btn-primary w-100 btn-lg" 
+                      type="submit"
+                      disabled={loading || !AuctionContract}
+                    >
+                      {loading ? (
+                        <>
+                          <span className="spinner-border spinner-border-sm me-2"/>
+                          Starting...
+                        </>
+                      ) : (
+                        <>
+                          <i className="bi bi-play-fill me-2"></i>
+                          Start Auction System
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </form>
+            </div>
           </div>
         </div>
       </div>
-    </div>
+
+      {/* Removed SYSTEM STATUS and AUCTION SYSTEM INFORMATION sections per request */}
+    </>
   );
 }

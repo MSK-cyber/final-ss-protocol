@@ -1,0 +1,123 @@
+[
+  { "type": "function", "name": "paused", "inputs": [], "outputs": [{ "name": "", "type": "bool", "internalType": "bool" }], "stateMutability": "view" },
+  { "type": "function", "name": "pause", "inputs": [], "outputs": [], "stateMutability": "nonpayable" },
+  { "type": "function", "name": "unpause", "inputs": [], "outputs": [], "stateMutability": "nonpayable" },
+
+  { "type": "function", "name": "auctionAdmin", "inputs": [], "outputs": [{ "name": "", "type": "address", "internalType": "contract IAuctionAdmin" }], "stateMutability": "view" },
+
+  { "type": "function", "name": "getTodayToken", "inputs": [], "outputs": [
+      { "name": "tokenOfDay", "type": "address", "internalType": "address" },
+      { "name": "active", "type": "bool", "internalType": "bool" }
+    ], "stateMutability": "view" },
+  { "type": "function", "name": "isAuctionActive", "inputs": [ { "name": "inputToken", "type": "address", "internalType": "address" } ], "outputs": [ { "name": "", "type": "bool", "internalType": "bool" } ], "stateMutability": "view" },
+  { "type": "function", "name": "isReverseAuctionActive", "inputs": [ { "name": "inputToken", "type": "address", "internalType": "address" } ], "outputs": [ { "name": "", "type": "bool", "internalType": "bool" } ], "stateMutability": "view" },
+  { "type": "function", "name": "getCurrentAuctionCycle", "inputs": [ { "name": "inputToken", "type": "address", "internalType": "address" } ], "outputs": [ { "name": "", "type": "uint256", "internalType": "uint256" } ], "stateMutability": "view" },
+  { "type": "function", "name": "getAuctionTimeLeft", "inputs": [ { "name": "inputToken", "type": "address", "internalType": "address" } ], "outputs": [ { "name": "", "type": "uint256", "internalType": "uint256" } ], "stateMutability": "view" },
+
+  { "type": "function", "name": "swapTokens", "inputs": [], "outputs": [], "stateMutability": "nonpayable" },
+  { "type": "function", "name": "burnTokensForState", "inputs": [], "outputs": [], "stateMutability": "nonpayable" },
+  { "type": "function", "name": "reverseSwapTokensForState", "inputs": [ { "name": "tokenAmount", "type": "uint256", "internalType": "uint256" } ], "outputs": [], "stateMutability": "nonpayable" },
+  { "type": "function", "name": "burnStateForTokens", "inputs": [ { "name": "stateToBurn", "type": "uint256", "internalType": "uint256" } ], "outputs": [], "stateMutability": "nonpayable" },
+
+  { "type": "function", "name": "getUserAuctionStatus", "inputs": [
+      { "name": "user", "type": "address", "internalType": "address" },
+      { "name": "auctionToken", "type": "address", "internalType": "address" }
+    ], "outputs": [
+      { "name": "step1", "type": "bool", "internalType": "bool" },
+      { "name": "step2", "type": "bool", "internalType": "bool" },
+      { "name": "step3", "type": "bool", "internalType": "bool" },
+      { "name": "stateBalance", "type": "uint256", "internalType": "uint256" }
+    ], "stateMutability": "view" },
+  { "type": "function", "name": "hasCompletedStep1", "inputs": [ { "name": "user", "type": "address", "internalType": "address" }, { "name": "auctionToken", "type": "address", "internalType": "address" } ], "outputs": [ { "name": "", "type": "bool", "internalType": "bool" } ], "stateMutability": "view" },
+  { "type": "function", "name": "hasCompletedStep2", "inputs": [ { "name": "user", "type": "address", "internalType": "address" }, { "name": "auctionToken", "type": "address", "internalType": "address" } ], "outputs": [ { "name": "", "type": "bool", "internalType": "bool" } ], "stateMutability": "view" },
+  { "type": "function", "name": "hasCompletedStep3", "inputs": [ { "name": "user", "type": "address", "internalType": "address" }, { "name": "auctionToken", "type": "address", "internalType": "address" } ], "outputs": [ { "name": "", "type": "bool", "internalType": "bool" } ], "stateMutability": "view" },
+  { "type": "function", "name": "getDavTokensUsed", "inputs": [ { "name": "user", "type": "address", "internalType": "address" }, { "name": "auctionToken", "type": "address", "internalType": "address" } ], "outputs": [ { "name": "", "type": "uint256", "internalType": "uint256" } ], "stateMutability": "view" },
+  { "type": "function", "name": "getAvailableDavForAuction", "inputs": [ { "name": "user", "type": "address", "internalType": "address" }, { "name": "auctionToken", "type": "address", "internalType": "address" } ], "outputs": [ { "name": "", "type": "uint256", "internalType": "uint256" } ], "stateMutability": "view" },
+  { "type": "function", "name": "canParticipateInAuction", "inputs": [ { "name": "user", "type": "address", "internalType": "address" }, { "name": "auctionToken", "type": "address", "internalType": "address" } ], "outputs": [ { "name": "", "type": "bool", "internalType": "bool" } ], "stateMutability": "view" },
+
+  { "type": "function", "name": "hasUserCompletedReverseStep1", "inputs": [ { "name": "user", "type": "address", "internalType": "address" }, { "name": "auctionToken", "type": "address", "internalType": "address" } ], "outputs": [ { "name": "", "type": "bool", "internalType": "bool" } ], "stateMutability": "view" },
+  { "type": "function", "name": "hasUserCompletedReverseStep2", "inputs": [ { "name": "user", "type": "address", "internalType": "address" }, { "name": "auctionToken", "type": "address", "internalType": "address" } ], "outputs": [ { "name": "", "type": "bool", "internalType": "bool" } ], "stateMutability": "view" },
+  { "type": "function", "name": "getReverseStateBalance", "inputs": [ { "name": "user", "type": "address", "internalType": "address" }, { "name": "auctionToken", "type": "address", "internalType": "address" } ], "outputs": [ { "name": "", "type": "uint256", "internalType": "uint256" } ], "stateMutability": "view" },
+  { "type": "function", "name": "calculateReverseStep2Output", "inputs": [ { "name": "auctionToken", "type": "address", "internalType": "address" }, { "name": "stateToBurn", "type": "uint256", "internalType": "uint256" } ], "outputs": [ { "name": "", "type": "uint256", "internalType": "uint256" } ], "stateMutability": "view" },
+
+  { "type": "function", "name": "isTokenSupported", "inputs": [ { "name": "token", "type": "address", "internalType": "address" } ], "outputs": [ { "name": "", "type": "bool", "internalType": "bool" } ], "stateMutability": "view" },
+  { "type": "function", "name": "getCurrentDayIndex", "inputs": [], "outputs": [ { "name": "", "type": "uint256", "internalType": "uint256" } ], "stateMutability": "view" },
+  { "type": "function", "name": "getPairAddress", "inputs": [ { "name": "token", "type": "address", "internalType": "address" } ], "outputs": [ { "name": "", "type": "address", "internalType": "address" } ], "stateMutability": "view" },
+  { "type": "function", "name": "getTotalTokensBurned", "inputs": [ { "name": "token", "type": "address", "internalType": "address" } ], "outputs": [ { "name": "", "type": "uint256", "internalType": "uint256" } ], "stateMutability": "view" },
+  { "type": "function", "name": "isUserEligible", "inputs": [ { "name": "user", "type": "address", "internalType": "address" } ], "outputs": [ { "name": "", "type": "bool", "internalType": "bool" } ], "stateMutability": "view" },
+  { "type": "function", "name": "getEligibilityInfo", "inputs": [], "outputs": [
+      { "name": "totalEligible", "type": "uint256", "internalType": "uint256" },
+      { "name": "maxAllowed", "type": "uint256", "internalType": "uint256" },
+      { "name": "remaining", "type": "uint256", "internalType": "uint256" }
+    ], "stateMutability": "view" },
+
+  { "type": "function", "name": "getTokenAuctionStats", "inputs": [ { "name": "token", "type": "address", "internalType": "address" } ], "outputs": [
+      { "name": "completedAuctions", "type": "uint256", "internalType": "uint256" },
+      { "name": "maxAuctions", "type": "uint256", "internalType": "uint256" },
+      { "name": "remainingAuctions", "type": "uint256", "internalType": "uint256" },
+      { "name": "isActive", "type": "bool", "internalType": "bool" },
+      { "name": "isScheduled", "type": "bool", "internalType": "bool" }
+    ], "stateMutability": "view" },
+  { "type": "function", "name": "getGlobalAuctionProgress", "inputs": [], "outputs": [
+      { "name": "totalSlots", "type": "uint256", "internalType": "uint256" },
+      { "name": "completedSlots", "type": "uint256", "internalType": "uint256" },
+      { "name": "remainingSlots", "type": "uint256", "internalType": "uint256" },
+      { "name": "auctionsEnded", "type": "bool", "internalType": "bool" }
+    ], "stateMutability": "view" },
+
+  { "type": "function", "name": "createPoolOneClick", "inputs": [
+      { "name": "token", "type": "address", "internalType": "address" },
+      { "name": "tokenAmount", "type": "uint256", "internalType": "uint256" },
+      { "name": "stateAmount", "type": "uint256", "internalType": "uint256" }
+    ], "outputs": [ { "name": "pair", "type": "address", "internalType": "address" } ], "stateMutability": "nonpayable" },
+  { "type": "function", "name": "startAuctionWithAutoTokens", "inputs": [], "outputs": [], "stateMutability": "nonpayable" },
+
+  { "type": "function", "name": "setPairAddress", "inputs": [ { "name": "token", "type": "address", "internalType": "address" }, { "name": "pair", "type": "address", "internalType": "address" } ], "outputs": [], "stateMutability": "nonpayable" },
+  { "type": "function", "name": "addLiquidityToPool", "inputs": [ { "name": "token", "type": "address", "internalType": "address" }, { "name": "tokenAmount", "type": "uint256", "internalType": "uint256" }, { "name": "stateAmount", "type": "uint256", "internalType": "uint256" } ], "outputs": [ { "name": "liquidity", "type": "uint256", "internalType": "uint256" } ], "stateMutability": "nonpayable" },
+
+  { "type": "function", "name": "initializeCompleteSystem", "inputs": [
+      { "name": "_stateToken", "type": "address", "internalType": "address" },
+      { "name": "_davToken", "type": "address", "internalType": "address" },
+      { "name": "_airdropDistributor", "type": "address", "internalType": "address" },
+      { "name": "_auctionAdmin", "type": "address", "internalType": "address" },
+      { "name": "_buyBurnController", "type": "address", "internalType": "address" },
+      { "name": "_swapLens", "type": "address", "internalType": "address" },
+      { "name": "_pulseXRouter", "type": "address", "internalType": "address" },
+      { "name": "_pulseXFactory", "type": "address", "internalType": "address" }
+    ], "outputs": [], "stateMutability": "nonpayable" },
+
+  { "type": "function", "name": "_setPaused", "inputs": [ { "name": "_paused", "type": "bool", "internalType": "bool" } ], "outputs": [], "stateMutability": "nonpayable" },
+  { "type": "function", "name": "_setMaxAuctionParticipants", "inputs": [ { "name": "newMax", "type": "uint256", "internalType": "uint256" } ], "outputs": [], "stateMutability": "nonpayable" },
+  { "type": "function", "name": "_setGovernance", "inputs": [ { "name": "newGov", "type": "address", "internalType": "address" } ], "outputs": [], "stateMutability": "nonpayable" },
+  { "type": "function", "name": "_setPendingGovernance", "inputs": [ { "name": "pending", "type": "address", "internalType": "address" }, { "name": "timestamp", "type": "uint256", "internalType": "uint256" } ], "outputs": [], "stateMutability": "nonpayable" },
+  { "type": "function", "name": "_registerDeployedToken", "inputs": [ { "name": "tokenAddress", "type": "address", "internalType": "address" }, { "name": "name", "type": "string", "internalType": "string" }, { "name": "deployer", "type": "address", "internalType": "address" } ], "outputs": [], "stateMutability": "nonpayable" },
+  { "type": "function", "name": "registerUserForAuctions", "inputs": [ { "name": "user", "type": "address", "internalType": "address" } ], "outputs": [], "stateMutability": "nonpayable" },
+
+  { "type": "function", "name": "governanceAddress", "inputs": [], "outputs": [ { "name": "", "type": "address", "internalType": "address" } ], "stateMutability": "view" },
+  { "type": "function", "name": "swapLens", "inputs": [], "outputs": [ { "name": "", "type": "address", "internalType": "address" } ], "stateMutability": "view" },
+  { "type": "function", "name": "pulseXRouter", "inputs": [], "outputs": [ { "name": "", "type": "address", "internalType": "address" } ], "stateMutability": "view" },
+  { "type": "function", "name": "pulseXFactory", "inputs": [], "outputs": [ { "name": "", "type": "address", "internalType": "address" } ], "stateMutability": "view" },
+  { "type": "function", "name": "stateToken", "inputs": [], "outputs": [ { "name": "", "type": "address", "internalType": "address" } ], "stateMutability": "view" },
+  { "type": "function", "name": "davToken", "inputs": [], "outputs": [ { "name": "", "type": "address", "internalType": "address" } ], "stateMutability": "view" },
+  { "type": "function", "name": "airdropDistributor", "inputs": [], "outputs": [ { "name": "", "type": "address", "internalType": "address" } ], "stateMutability": "view" },
+
+  { "type": "event", "name": "ContractPaused", "inputs": [ { "name": "by", "type": "address", "indexed": false, "internalType": "address" } ], "anonymous": false },
+  { "type": "event", "name": "ContractUnpaused", "inputs": [ { "name": "by", "type": "address", "indexed": false, "internalType": "address" } ], "anonymous": false },
+  { "type": "event", "name": "DailyStateReleaseRolled", "inputs": [ { "name": "dayIndex", "type": "uint256", "indexed": true, "internalType": "uint256" }, { "name": "amount", "type": "uint256", "indexed": false, "internalType": "uint256" }, { "name": "newDayStart", "type": "uint256", "indexed": false, "internalType": "uint256" } ], "anonymous": false },
+  { "type": "event", "name": "LPTokensBurned", "inputs": [ { "name": "pair", "type": "address", "indexed": true, "internalType": "address" }, { "name": "liquidity", "type": "uint256", "indexed": false, "internalType": "uint256" }, { "name": "burnAddress", "type": "address", "indexed": false, "internalType": "address" } ], "anonymous": false },
+  { "type": "event", "name": "PoolCreated", "inputs": [ { "name": "token", "type": "address", "indexed": true, "internalType": "address" }, { "name": "pair", "type": "address", "indexed": false, "internalType": "address" }, { "name": "amountTokenUsed", "type": "uint256", "indexed": false, "internalType": "uint256" }, { "name": "amountStateUsed", "type": "uint256", "indexed": false, "internalType": "uint256" } ], "anonymous": false },
+  { "type": "event", "name": "LiquidityAdded", "inputs": [ { "name": "token", "type": "address", "indexed": true, "internalType": "address" }, { "name": "pair", "type": "address", "indexed": true, "internalType": "address" }, { "name": "amountState", "type": "uint256", "indexed": false, "internalType": "uint256" }, { "name": "amountToken", "type": "uint256", "indexed": false, "internalType": "uint256" }, { "name": "liquidity", "type": "uint256", "indexed": false, "internalType": "uint256" } ], "anonymous": false },
+  { "type": "event", "name": "AuctionScheduleSet", "inputs": [ { "name": "startAt", "type": "uint256", "indexed": false, "internalType": "uint256" }, { "name": "count", "type": "uint256", "indexed": false, "internalType": "uint256" } ], "anonymous": false },
+  { "type": "event", "name": "AirdropDistributorSet", "inputs": [ { "name": "airdropDistributor", "type": "address", "indexed": true, "internalType": "address" } ], "anonymous": false },
+  { "type": "event", "name": "AuctionFeeCollected", "inputs": [ { "name": "token", "type": "address", "indexed": true, "internalType": "address" }, { "name": "amount", "type": "uint256", "indexed": false, "internalType": "uint256" }, { "name": "by", "type": "address", "indexed": false, "internalType": "address" } ], "anonymous": false },
+  { "type": "event", "name": "SystemInitialized", "inputs": [
+      { "name": "stateToken", "type": "address", "indexed": false, "internalType": "address" },
+      { "name": "davToken", "type": "address", "indexed": false, "internalType": "address" },
+      { "name": "lpHelper", "type": "address", "indexed": false, "internalType": "address" },
+      { "name": "airdropDistributor", "type": "address", "indexed": false, "internalType": "address" },
+      { "name": "auctionAdmin", "type": "address", "indexed": false, "internalType": "address" },
+      { "name": "buyBurnController", "type": "address", "indexed": false, "internalType": "address" },
+      { "name": "pulseXRouter", "type": "address", "indexed": false, "internalType": "address" },
+      { "name": "pulseXFactory", "type": "address", "indexed": false, "internalType": "address" }
+    ], "anonymous": false }
+]

@@ -7,11 +7,11 @@ import {DAV_V3} from "../src/DavToken.sol";
 
 contract Deploy05_DAV_V3 is Script {
     // Update these addresses after previous deployments
-    address constant STATE_V3_ADDRESS = 0x294a2db4E0c321AF7c2223e9ce19c0127F1424F2; // STATE_V3 from Deploy02
-    address constant AUCTION_ADMIN_ADDRESS = 0x1734433003a15eD69d16C5Db2DD8Cc8F8df05dC0; // AuctionAdmin from Deploy03
-    address constant BUY_AND_BURN_ADDRESS = 0xD16798A26Fdf17AC7D0A45761ce071C1cE3b4073; // BuyAndBurn from Deploy04
-    address constant SWAP_V3_ADDRESS = 0x1062D1bBD322781Be2a701698e8DD62E4D3aBCd4; // SWAP_V3 from Deploy01
-    address constant GOV_ADDRESS = 0xBAaB2913ec979d9d21785063a0e4141e5B787D28;
+    address constant STATE_V3_ADDRESS = 0x72f55666a5CfB5a7C179F9E829402C34bd0708Bd; // STATE_V3 from Deploy02
+    address constant AUCTION_ADMIN_ADDRESS = 0x3F3350E7Cc9F1309182E3280eF9aBB4d042d6aB4; // AuctionAdmin from Deploy03
+    address constant BUY_AND_BURN_ADDRESS = 0xF6Cd74d4DEdB69bE6824F51d669D5F3483962335; // BuyAndBurn from Deploy04
+    address constant SWAP_V3_ADDRESS = 0x329390c539008885491a09Df6798267e643182A1; // SWAP_V3 from Deploy01
+    address constant GOV_ADDRESS = 0x9FA004E13e780EF5b50ca225ad5DCD4D0Fe9ed70;
 
     function run() external {
         require(STATE_V3_ADDRESS != address(0), "Must update STATE_V3_ADDRESS first");
@@ -40,15 +40,12 @@ contract Deploy05_DAV_V3 is Script {
             BUY_AND_BURN_ADDRESS,     // _buyAndBurnController (receives 80% liquidity + ROI calculation)
             SWAP_V3_ADDRESS,          // _swapContract (for ROI calculations)
             "PulseDAV",              // tokenName
-            "pDAV"                   // tokenSymbol
+            "pDAV1"                   // tokenSymbol
         );
         
         console.log("SUCCESS: DAV_V3 deployed at:", address(davV3));
+        console.log("NOTE: Ownership renounced in constructor - governance address has direct admin rights");
         console.log("");
-        
-        // Transfer ownership to governance
-        davV3.transferOwnership(GOV_ADDRESS);
-        console.log("Ownership transferred to governance");
         
         vm.stopBroadcast();
         
@@ -57,7 +54,7 @@ contract Deploy05_DAV_V3 is Script {
         console.log("");
         console.log("Token Details:");
         console.log("- Name: PulseDAV");
-        console.log("- Symbol: pDAV");
+        console.log("- Symbol: pDAV1");
         console.log("- Initial governance mint: 2000 DAV tokens");
         console.log("- 80% mint fees go to BuyAndBurnController");
         console.log("- 10% holder rewards");
@@ -69,5 +66,12 @@ contract Deploy05_DAV_V3 is Script {
         console.log("");
         console.log("Deployment complete! DAV_V3 is ready to use.");
         console.log("Note: LPHelper is no longer used - use SWAP_V3.createPoolOneClick() directly for pool creation");
+        console.log("");
+        console.log("NEXT STEP: Deploy AirdropDistributor:");
+        console.log("forge script scripts/Deploy06_AirdropDistributor.s.sol:Deploy06_AirdropDistributor");
+        console.log("  --rpc-url https://rpc.pulsechain.com");
+        console.log("  --private-key $PRIVATE_KEY");
+        console.log("  --broadcast");
+        console.log("  --legacy");
     }
 }

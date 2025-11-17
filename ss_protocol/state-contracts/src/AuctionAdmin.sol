@@ -31,18 +31,36 @@ interface IDAV {
     function transferGovernanceImmediate(address newGovernance) external;
 }
 
-/// @title AuctionAdmin
-/// @notice Administrative contract managing auction operations, token deployment, and fee distribution
-/// @dev AUDIT NOTES:
-///      - Function overloading is valid Solidity (unused 2-param version removed for clarity)
-///      - Pool creation handled by SWAP_V3.createPoolOneClick() directly
-///      - distributeFeeToWallets allows owner for manual distributions (intentional design)
-///      - Fee wallet array compaction uses swap-and-pop pattern with proper mapping updates
-///      - Gas optimizations deferred for code clarity and maintainability
+interface IBuyAndBurnController {
+    function transferGovernanceByAdmin(address newGovernance) external;
+}
+
+/**
+ * @title AuctionAdmin
+ * @author State Protocol Team
+ * @notice Administrative contract managing auction operations, token deployment, and fee distribution
+ * @dev Handles governance transfers, development fee wallet management, and token deployment
+ * @custom:governance 7-day timelock for governance transfers across all protocol contracts
+ * @custom:fees Distributes DAV minting fees (5% PLS) and auction fees (0.5%) to dev wallets
+ * @custom:wallets Maximum 5 development fee wallets, percentages must sum to 100
+ */
 contract AuctionAdmin is Ownable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     ISWAP_V3 public mainContract;
+    address public governance;
+    
+    // ================= Governance Transfer System =================
+    
+    /// @notice Pending governance proposal with timelock
+    struct GovernanceProposal {
+        address newGovernance;
+        uint256 timestamp;
+    }
+    GovernanceProposal public pendingProtocolGovernance;
+    
+    /// @notice Timelock duration for governance transfers (7 days)
+    uint256 public constant GOVERNANCE_TIMELOCK = 7 days;
     
     // ================= Development Fee Wallet System =================
     // Used by DAV token (5% PLS minting fee) and AuctionSwap (0.5% auction fees)
@@ -77,9 +95,6 @@ contract AuctionAdmin is Ownable, ReentrancyGuard {
     event DexAddressesUpdated(address indexed router, address indexed factory);
     event TokenDeployed(string name, address indexed token, uint256 tokenId);
     event AuctionStarted(uint256 startTime, uint256 endTime, address indexed token, address indexed stateToken);
-    event GovernanceUpdateProposed(address indexed newGovernance, uint256 timestamp);
-    event GovernanceUpdated(address indexed newGovernance);
-    event ProtocolGovernanceTransferCompleted(address indexed newGovernance);
     event DavTokenAddressSet(address indexed davToken);
     event TokensDeposited(address indexed token, uint256 amount);
     event ProtocolFeeAccrued(address indexed token, uint256 amount);
@@ -89,110 +104,130 @@ contract AuctionAdmin is Ownable, ReentrancyGuard {
     event DevelopmentFeeWalletAdded(address indexed wallet, uint256 percentage);
     event DevelopmentFeeWalletRemoved(address indexed wallet);
     event DevelopmentFeeWalletPercentageUpdated(address indexed wallet, uint256 oldPercentage, uint256 newPercentage);
+    event ProtocolGovernanceProposed(address indexed newGovernance, uint256 executeAfter);
+    event ProtocolGovernanceTransferred(address indexed newGovernance);
 
     modifier onlyMainContract() {
         require(msg.sender == address(mainContract), "Only main contract");
         _;
     }
+    
+    modifier onlyGovernance() {
+        require(msg.sender == governance, "Only governance");
+        _;
+    }
 
-    constructor(address _mainContract) Ownable(msg.sender) {
+    constructor(address _mainContract, address _governance) Ownable(msg.sender) {
+        require(_mainContract != address(0) && _governance != address(0), "Zero address");
         mainContract = ISWAP_V3(_mainContract);
-    }
-
-    function setMainContract(address _mainContract) external onlyOwner {
-        require(_mainContract != address(0), "Zero address");
-        mainContract = ISWAP_V3(_mainContract);
-    }
-
-    // ================= Governance Functions (UI-Friendly - Auto-use mainContract) =================
-
-    function pause() external onlyOwner {
-        mainContract._setPaused(true);
-        emit ContractPaused(msg.sender);
-    }
-
-    function unpause() external onlyOwner {
-        mainContract._setPaused(false);
-        emit ContractUnpaused(msg.sender);
-    }
-
-    function setMaxAuctionParticipants(uint256 newMax) external onlyOwner {
-        mainContract._setMaxAuctionParticipants(newMax);
-        emit MaxParticipantsUpdated(mainContract.maxAuctionParticipants(), newMax);
-    }
-
-    function setDexAddresses(address _router, address _factory) external onlyOwner {
-        mainContract._setDexAddresses(_router, _factory);
-        emit DexAddressesUpdated(_router, _factory);
-    }
-
-
-    function updateGovernance(address newGov) external onlyOwner {
-        mainContract._setPendingGovernance(newGov, block.timestamp + mainContract.GOVERNANCE_UPDATE_DELAY());
-        emit GovernanceUpdateProposed(newGov, block.timestamp);
-    }
-
-    function confirmGovernanceUpdate() external onlyOwner {
-        address pendingGovernance = mainContract.pendingGovernance();
-        uint256 timestamp = mainContract.governanceUpdateTimestamp();
+        governance = _governance;
         
-        require(pendingGovernance != address(0), "No pending governance");
-        require(block.timestamp >= timestamp, "Timelock not expired");
-        
-        mainContract._setGovernance(pendingGovernance);
-        emit GovernanceUpdated(pendingGovernance);
+        // Renounce ownership immediately - governance has direct admin rights
+        renounceOwnership();
     }
 
-    function transferProtocolGovernance(address newGovernance) external onlyOwner {
-        mainContract._setGovernance(newGovernance);
+    // ================= Centralized Governance Transfer (7-Day Timelock) =================
+    
+    /**
+     * @notice Propose new governance for entire protocol (7-day timelock)
+     * @param newGovernance Address of new governance (typically a multisig)
+     * @dev Starts timelock - must call confirmProtocolGovernance() after 7 days
+     * @dev Transfers governance for all protocol contracts:
+     *      - AuctionSwap: governance
+     *      - DavToken: governance
+     *      - BuyAndBurnController: governance
+     *      - AuctionAdmin: governance (self)
+     *      
+     *      NOTE: All contracts renounce ownership in constructor
+     *            AirdropDistributor is fully autonomous (no governance)
+     */
+    function proposeProtocolGovernance(address newGovernance) external onlyGovernance {
+        require(newGovernance != address(0), "Zero address");
         
+        pendingProtocolGovernance = GovernanceProposal({
+            newGovernance: newGovernance,
+            timestamp: block.timestamp + GOVERNANCE_TIMELOCK
+        });
+        
+        emit ProtocolGovernanceProposed(newGovernance, block.timestamp + GOVERNANCE_TIMELOCK);
+    }
+
+    /**
+     * @notice Confirm governance transfer after timelock expires
+     * @dev Transfers governance for ALL protocol contracts atomically:
+     *      1. AuctionSwap (SWAP_V3) - transfers governance
+     *      2. DavToken (DAV_V3) - transfers governance
+     *      3. BuyAndBurnController_V2 - transfers governance (read from SWAP)
+     *      4. AuctionAdmin - transfers own governance (last)
+     * @custom:security All transfers atomic - if any fails, entire transaction reverts
+     * @custom:excluded SwapLens (renounced ownership), AirdropDistributor (autonomous)
+     */
+    function confirmProtocolGovernance() external onlyGovernance {
+        require(pendingProtocolGovernance.newGovernance != address(0), "No pending governance");
+        require(block.timestamp >= pendingProtocolGovernance.timestamp, "Timelock not expired");
+        
+        address newGov = pendingProtocolGovernance.newGovernance;
+        
+        // 1. Transfer AuctionSwap governance (ownership renounced in constructor)
+        mainContract._setGovernance(newGov);
+        
+        // 2. Transfer DavToken governance (ownership renounced in constructor)
         address davToken = mainContract.davToken();
         if (davToken != address(0)) {
-            IDAV(davToken).transferGovernanceImmediate(newGovernance);
+            IDAV(davToken).transferGovernanceImmediate(newGov);
         }
-        emit ProtocolGovernanceTransferCompleted(newGovernance);
-    }
-
-    function setDavTokenAddress(address _davToken) external onlyOwner {
-        // This would set DAV token address in the main contract
-        // Implementation depends on main contract's setter
-        emit DavTokenAddressSet(_davToken);
-    }
-
-    function depositTokens(
-        address token,
-        uint256 amount
-    ) external onlyOwner {
-        IERC20(token).safeTransferFrom(msg.sender, address(mainContract), amount);
-        emit TokensDeposited(token, amount);
-    }
-
-    function deployUserToken(
-        string memory name,
-        string memory symbol,
-        address recipient,
-        address _owner
-    ) external onlyOwner returns (address) {
-        // Implementation would deploy token and register with main contract
-        // recipient gets 100% of supply in single transaction
-        address tokenAddress = address(new TOKEN_V3(name, symbol, recipient, _owner));
         
-        // Register the deployed token with the main contract
-        mainContract._registerDeployedToken(tokenAddress, name, _owner);
+        // 3. Transfer BuyAndBurnController governance (ownership renounced in constructor)
+        address buyAndBurn = mainContract.buyAndBurnController();
+        if (buyAndBurn != address(0)) {
+            IBuyAndBurnController(buyAndBurn).transferGovernanceByAdmin(newGov);
+        }
         
-        emit TokenDeployed(name, tokenAddress, 0);
-        return tokenAddress;
+        // 4. SwapLens - ownership renounced, no transfer needed
+        // 5. AirdropDistributor - fully autonomous, no governance
+        
+        // 6. Transfer own governance (last operation)
+        governance = newGov;
+        
+        // Clear pending proposal
+        delete pendingProtocolGovernance;
+        
+        emit ProtocolGovernanceTransferred(newGov);
     }
-
-    /// @notice One-click token deployment with automatic SWAP registration
-    /// @dev AUDIT NOTE: This is the ONLY deployTokenOneClick function (unused 2-param overload removed)
-    ///      Matches IAuctionAdmin interface signature: deployTokenOneClick(address,string,string)
-    ///      Function overloading is valid Solidity - compiler distinguishes by parameter count/types
-    /// @param swapContract The SWAP_V3 contract address initiating the call (must match mainContract)
-    /// @param name Token name for the new token
-    /// @param symbol Token symbol for the new token
-    /// @return tokenAddress Address of the newly deployed token (100% supply minted to SWAP vault)
-    /// @custom:security Only callable by mainContract, all tokens minted to SWAP treasury atomically
+    
+    /**
+     * @notice Cancel pending governance proposal (emergency)
+     * @dev Only callable by current owner before timelock expires
+     */
+    function cancelProtocolGovernanceProposal() external onlyGovernance {
+        require(pendingProtocolGovernance.newGovernance != address(0), "No pending governance");
+        delete pendingProtocolGovernance;
+    }
+    
+    /**
+     * @notice View pending governance proposal details
+     * @return newGovernance Proposed new governance address
+     * @return executeAfter Timestamp when proposal can be executed
+     * @return isReady Whether timelock has passed and proposal is ready
+     */
+    function getPendingGovernance() external view returns (
+        address newGovernance,
+        uint256 executeAfter,
+        bool isReady
+    ) {
+        newGovernance = pendingProtocolGovernance.newGovernance;
+        executeAfter = pendingProtocolGovernance.timestamp;
+        isReady = newGovernance != address(0) && block.timestamp >= executeAfter;
+    }
+    
+    /**
+     * @notice One-click token deployment with automatic SWAP registration
+     * @param swapContract The SWAP_V3 contract address initiating the call (must match mainContract)
+     * @param name Token name for the new token
+     * @param symbol Token symbol for the new token
+     * @return tokenAddress Address of the newly deployed token (100% supply minted to SWAP vault)
+     * @custom:security Only callable by mainContract, all tokens minted to SWAP treasury atomically
+     */
     function deployTokenOneClick(
         address swapContract,
         string memory name,
@@ -204,20 +239,20 @@ contract AuctionAdmin is Ownable, ReentrancyGuard {
         require(bytes(name).length > 0 && bytes(symbol).length > 0, "Empty name or symbol");
 
         // Get governance address from the main contract
-        address governance = mainContract.governanceAddress();
+        address swapGovernance = mainContract.governanceAddress();
 
         // Deploy the token - 100% to SWAP treasury in SINGLE transaction
         TOKEN_V3 token = new TOKEN_V3(
             name,
             symbol,
             address(mainContract),   // recipient (100% to SWAP contract in single mint)
-            governance               // _owner (governance as initial owner for setup only)
+            address(0)               // _owner (address(0) makes token ownerless from deployment)
         );
 
         tokenAddress = address(token);
 
         // Register the token with the main contract (deployer shown as governance for UI ownership mapping)
-        mainContract._registerDeployedToken(tokenAddress, name, governance);
+        mainContract._registerDeployedToken(tokenAddress, name, swapGovernance);
 
         emit TokenDeployed(name, tokenAddress, 0);
         return tokenAddress;
@@ -225,13 +260,14 @@ contract AuctionAdmin is Ownable, ReentrancyGuard {
 
     // ================= Development Fee Wallet Management =================
     
-    /// @notice Add a new development fee wallet with automatic equal distribution
-    /// @param wallet Address of the development wallet to add
-    /// @dev AUDIT NOTE: Automatically rebalances all wallets to equal percentages.
-    ///      Example: 1 wallet=100%, 2 wallets=50/50, 3 wallets=33/33/34, etc.
-    ///      Maximum 5 wallets enforced to prevent excessive gas costs in loops.
-    /// @custom:security Validates wallet not already registered and count below MAX_DEV_FEE_WALLETS
-    function addDevelopmentFeeWallet(address wallet) external onlyOwner {
+    /**
+     * @notice Add a new development fee wallet with automatic equal distribution
+     * @param wallet Address of the development wallet to add
+     * @dev Automatically rebalances all wallets to equal percentages (e.g., 3 wallets = 33/33/34)
+     * @custom:limit Maximum 5 wallets enforced to prevent excessive gas costs
+     * @custom:security Validates wallet not already registered and count below MAX_DEV_FEE_WALLETS
+     */
+    function addDevelopmentFeeWallet(address wallet) external onlyGovernance {
         require(wallet != address(0), "Zero address");
         require(developmentFeeWalletsCount < MAX_DEV_FEE_WALLETS, "Max wallets reached");
         require(feeWalletToIndex[wallet] == 0 || !developmentFeeWallets[feeWalletToIndex[wallet]].active, "Wallet already exists");
@@ -253,13 +289,14 @@ contract AuctionAdmin is Ownable, ReentrancyGuard {
         emit DevelopmentFeeWalletAdded(wallet, developmentFeeWallets[index].percentage);
     }
     
-    /// @notice Remove a development fee wallet
-    /// @param wallet Address of the wallet to remove
-    /// @dev AUDIT NOTE: Uses swap-and-pop pattern for gas-efficient array compaction.
-    ///      Process: 1) Mark inactive, 2) Move last element to gap, 3) Update mappings, 4) Delete last
-    ///      Automatically rebalances remaining wallets to equal percentages.
-    /// @custom:security Validates wallet exists and is active before removal
-    function removeDevelopmentFeeWallet(address wallet) external onlyOwner {
+    /**
+     * @notice Remove a development fee wallet
+     * @param wallet Address of the wallet to remove
+     * @dev Uses swap-and-pop pattern for array compaction with proper mapping updates
+     * @custom:pattern Moves last wallet to removed position, updates mappings, decrements count
+     * @custom:security Validates wallet exists and is active before removal
+     */
+    function removeDevelopmentFeeWallet(address wallet) external onlyGovernance {
         require(wallet != address(0), "Zero address");
         
         uint256 index = feeWalletToIndex[wallet];
@@ -294,7 +331,7 @@ contract AuctionAdmin is Ownable, ReentrancyGuard {
      * @param newPercentage New percentage allocation (out of 100)
      * @dev Total percentage across all wallets must equal 100% (except when setting to 0% for removal)
      */
-    function updateDevelopmentFeeWalletPercentage(address wallet, uint256 newPercentage) external onlyOwner {
+    function updateDevelopmentFeeWalletPercentage(address wallet, uint256 newPercentage) external onlyGovernance {
         require(wallet != address(0), "Zero address");
         require(newPercentage <= 100, "Invalid percentage");
         
@@ -307,7 +344,7 @@ contract AuctionAdmin is Ownable, ReentrancyGuard {
         // Calculate total without this wallet
         uint256 otherWalletsTotal = _getTotalDevFeePercentage() - oldPercentage;
         
-        // If setting to 0%, allow (for removal workflow)
+        // Allow setting to 0% as part of wallet removal workflow
         if (newPercentage == 0) {
             developmentFeeWallets[index].percentage = 0;
             emit DevelopmentFeeWalletPercentageUpdated(wallet, oldPercentage, 0);
@@ -373,7 +410,8 @@ contract AuctionAdmin is Ownable, ReentrancyGuard {
     /**
      * @notice Automatically rebalance all active wallets to equal percentages
      * @dev Distributes 100% equally among all active wallets
-     * Example: 1 wallet = 100%, 2 wallets = 50/50, 3 wallets = 33/33/34, etc.
+     * @custom:formula basePercentage = 100 / count, remainder goes to first wallet
+     * @custom:example 1 wallet = 100%, 2 wallets = 50/50, 3 wallets = 33/33/34
      */
     function _rebalanceAllWallets() internal {
         if (developmentFeeWalletsCount == 0) return;
@@ -395,16 +433,18 @@ contract AuctionAdmin is Ownable, ReentrancyGuard {
         }
     }
     
-    /// @notice Distribute fees to development wallets based on configured percentages
-    /// @param token Address of the token to distribute (STATE, auction tokens, PLS, etc.)
-    /// @param amount Total amount of tokens to distribute among dev wallets
-    /// @dev AUDIT NOTE: Owner access is INTENTIONAL for manual fee distributions.
-    ///      Called automatically by AuctionSwap (0.5% fees) and DAV (5% mint fees).
-    ///      Owner can also call manually for custom distributions or corrections.
-    ///      Handles dust (rounding remainder) by giving to first active wallet.
-    /// @custom:security Only callable by mainContract or owner, validates non-zero amounts
+    /**
+     * @notice Distribute fees to development wallets based on configured percentages
+     * @param token Address of the token to distribute (STATE, auction tokens, PLS, etc.)
+     * @param amount Total amount of tokens to distribute among dev wallets
+     * @dev Called automatically by AuctionSwap (0.5% fees) and DAV (5% mint fees)
+     * @custom:caller Callable by mainContract or governance for manual distributions
+     * @custom:distribution Shares based on wallet percentages, dust goes to first active wallet
+     * @custom:security Uses SafeERC20, reverts if insufficient balance
+     * @custom:integration DAV distributes PLS fees directly, this handles ERC20 token fees
+     */
     function distributeFeeToWallets(address token, uint256 amount) external {
-        require(msg.sender == address(mainContract) || msg.sender == owner(), "Unauthorized");
+        require(msg.sender == address(mainContract) || msg.sender == governance, "Unauthorized");
         require(token != address(0), "Zero token address");
         require(amount > 0, "Zero amount");
         
@@ -418,7 +458,7 @@ contract AuctionAdmin is Ownable, ReentrancyGuard {
             if (developmentFeeWallets[i].active && developmentFeeWallets[i].percentage > 0) {
                 uint256 share = (amount * developmentFeeWallets[i].percentage) / 100;
                 if (share > 0) {
-                    IERC20(token).transfer(developmentFeeWallets[i].wallet, share);
+                    IERC20(token).safeTransfer(developmentFeeWallets[i].wallet, share);
                     totalDistributed += share;
                 }
             }
@@ -430,7 +470,7 @@ contract AuctionAdmin is Ownable, ReentrancyGuard {
             // Give dust to first active wallet with non-zero percentage
             for (uint256 i = 0; i < developmentFeeWalletsCount; i++) {
                 if (developmentFeeWallets[i].active && developmentFeeWallets[i].percentage > 0) {
-                    IERC20(token).transfer(developmentFeeWallets[i].wallet, dust);
+                    IERC20(token).safeTransfer(developmentFeeWallets[i].wallet, dust);
                     break;
                 }
             }

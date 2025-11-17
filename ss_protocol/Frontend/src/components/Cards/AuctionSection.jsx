@@ -21,13 +21,12 @@ import { useAllTokens } from "../Swap/Tokens";
 import { ContractContext } from "../../Functions/ContractInitialize";
 import { notifyError } from "../../Constants/Constants";
 import { calculatePlsValueNumeric, formatNumber, formatWithCommas } from "../../Constants/Utils";
-import { formatCountdown } from "../../Constants/Utils";
 
 const AuctionSection = () => {
     const chainId = useChainId();
     const { tokens } = TokensDetails();
     const TOKENS = useAllTokens();
-    const { signer, AllContracts, contracts } = useContext(ContractContext);
+    const { signer, AllContracts, contracts, provider } = useContext(ContractContext);
     const tokenBalances = useTokenBalances(TOKENS, signer);
     const { address } = useAccount();
     const {
@@ -44,8 +43,18 @@ const AuctionSection = () => {
         ReferralCodeOfUser,
         davGovernanceHolds,
         totalInvestedPls,
+        // On-chain ROI (authoritative for claim eligibility)
+        roiTotalValuePls,
+        roiRequiredValuePls,
+        roiMeets,
+        roiPercentage,
+        // Client-side ROI (kept for fallback only)
+        roiClientPercentage,
+        roiClientTotalPls,
+        roiClientRequiredPls,
+        roiClientMeets,
     } = useDAvContract();
-    const { CalculationOfCost, TotalCost, getAirdropAmount, getInputAmount, getOutPutAmount, pstateToPlsRatio, DaipriceChange, AuctionTime } = useSwapContract();
+    const { CalculationOfCost, TotalCost, getAirdropAmount, getInputAmount, getOutPutAmount, pstateToPlsRatio, DaipriceChange } = useSwapContract();
     const [amount, setAmount] = useState("");
     const [Refferalamount, setReferralAmount] = useState("");
     const [load, setLoad] = useState(false);
@@ -53,14 +62,13 @@ const AuctionSection = () => {
     const [copiedCode, setCopiedCode] = useState("");
     const AuthAddress = import.meta.env.VITE_AUTH_ADDRESS;
     const [isGov, setIsGov] = useState(false);
-    const [nextEnding, setNextEnding] = useState(0);
 
     useEffect(() => {
         let cancelled = false;
         (async () => {
             try {
                 if (!AllContracts?.AuctionContract || !address) return;
-                const gov = (await AllContracts.AuctionContract.governanceAddress()).toLowerCase();
+                const gov = (await (provider ? AllContracts.AuctionContract.connect(provider) : AllContracts.AuctionContract).governanceAddress()).toLowerCase();
                 const me = address.toLowerCase();
                 if (!cancelled) setIsGov(gov === me);
             } catch {
@@ -69,18 +77,8 @@ const AuctionSection = () => {
             }
         })();
         return () => { cancelled = true; };
-    }, [AllContracts?.AuctionContract, address, AuthAddress]);
+    }, [AllContracts?.AuctionContract, address, AuthAddress, provider]);
 
-    // Derive next ending auction seconds (min of AuctionTime values > 0)
-    useEffect(() => {
-        try {
-            if (!AuctionTime) { setNextEnding(0); return; }
-            const entries = Object.entries(AuctionTime).map(([name, secs]) => Number(secs) || 0).filter(v => v > 0);
-            setNextEnding(entries.length ? Math.min(...entries) : 0);
-        } catch {
-            setNextEnding(0);
-        }
-    }, [AuctionTime]);
     const nativeSymbol = chainCurrencyMap[chainId] || 'PLS';
     const setBackLogo = () => {
         if (chainId === 369) return PLSLogo;
@@ -135,20 +133,8 @@ const AuctionSection = () => {
                 setAmount("");
                 setReferralAmount("");
             } catch (error) {
-                // Enhanced error surface
-                let msg = "Minting failed";
-                const lower = (error?.message || "").toLowerCase();
-                if (error?.reason) msg = error.reason;
-                else if (error?.data?.message) msg = error.data.message;
-                else if (lower.includes("pool not ready")) msg = "Pool not ready - please refresh (governance may still be configuring)";
-                else if (lower.includes("incorrect pls amount")) msg = "Incorrect PLS sent – refresh price and retry";
-                else if (lower.includes("max holders")) msg = "Max holders reached";
-                else if (lower.includes("governance cannot mint")) msg = "Governance wallet cannot mint";
-                else if (lower.includes("amount must be a whole")) msg = "Amount must be a whole number";
-                else if (lower.includes("max supply")) msg = "Mint cap reached";
-                else if (lower.includes("user rejected") || lower.includes("rejected")) msg = "Transaction rejected";
-                console.error("Minting error (decoded):", error);
-                notifyError(msg);
+                // Error already surfaced by mintDAV; just log and reset loader
+                console.error("Minting error (caught in UI):", error);
             } finally {
                 setLoad(false);
             }
@@ -161,11 +147,16 @@ const AuctionSection = () => {
         }
         CalculationOfCost(e.target.value);
     };
-    // Helper to calculate total sum
+    // Helper to calculate total sum: Σ(token→STATE→PLS) + (STATE holdings→PLS)
     const calculateTotalSum = () => {
-        return tokens.reduce((sum, token) => {
+        const tokensPls = tokens.reduce((sum, token) => {
             return sum + calculatePlsValueNumeric(token, tokenBalances, pstateToPlsRatio);
         }, 0);
+        const stateBalRaw = tokenBalances?.["STATE"]; // formatted string
+        const stateBal = Number.parseFloat(stateBalRaw || 0);
+        const ratio = Number.parseFloat(pstateToPlsRatio || 0);
+        const statePls = (Number.isFinite(stateBal) && Number.isFinite(ratio) && ratio > 0) ? (stateBal * ratio) : 0;
+        return tokensPls + statePls;
     };
 
     const handleOptionalInputChange = (e) => {
@@ -176,11 +167,35 @@ const AuctionSection = () => {
         CalculationOfCost(amount);
     }, [CalculationOfCost, amount]);
 
-    const invested = Number(totalInvestedPls);
-    const totalSum = Number(calculateTotalSum());
+    // Use authoritative on-chain ROI values for display to match claim gating
+    const estimatedPlsValue = useMemo(() => {
+        const v = Number.parseFloat(roiTotalValuePls || 0);
+        if (Number.isFinite(v) && v >= 0) return v;
+        // Fallback to client estimate if on-chain unavailable
+        try {
+            const fallback = calculateTotalSum();
+            return Number.isFinite(fallback) ? Math.max(0, fallback) : 0;
+        } catch { return 0; }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [roiTotalValuePls, tokens, tokenBalances, pstateToPlsRatio]);
 
-    const roi = invested > 0 ? (totalSum / invested) * 100 : 0;
-    const apr = invested > 0 ? (totalSum / invested) * 36500 : 0;
+    const requiredPlsValue = useMemo(() => {
+        const v = Number.parseFloat(roiRequiredValuePls || 0);
+        if (Number.isFinite(v) && v >= 0) return v;
+        // Fallback to previous logic if on-chain missing
+        const r1 = Number.parseFloat(roiClientRequiredPls || 0);
+        const r2 = Number.parseFloat(totalInvestedPls || 0);
+        const r = Number.isFinite(r1) && r1 > 0 ? r1 : (Number.isFinite(r2) ? r2 : 0);
+        return Math.max(0, r);
+    }, [roiRequiredValuePls, roiClientRequiredPls, totalInvestedPls]);
+
+    const roiPctDisplay = useMemo(() => {
+        const onchain = Number.parseFloat(roiPercentage || 0);
+        if (Number.isFinite(onchain) && onchain >= 0) return String(Math.trunc(onchain));
+        if (!requiredPlsValue || requiredPlsValue <= 0) return '0';
+        const pct = Math.trunc((estimatedPlsValue * 100) / requiredPlsValue);
+        return String(pct >= 0 ? pct : 0);
+    }, [roiPercentage, estimatedPlsValue, requiredPlsValue]);
     return (
         <div className="container mt-4">
             <div className="row g-4 d-flex align-items-stretch pb-1">
@@ -278,7 +293,7 @@ const AuctionSection = () => {
                                         <p className="mb-1 detailText">ACTIVE DAV / EXPIRED DAV</p>
                                         {isGov && (
                                             <span className="badge bg-info text-dark" title="You are connected with governance">
-                                                Governance
+                                                GOV
                                             </span>
                                         )}
                                     </div>
@@ -289,14 +304,19 @@ const AuctionSection = () => {
                                             ) : (
                                                 <>{isLoading ? <DotAnimation /> : davHolds}</>
                                             )}{" "}
-                                            / {isLoading ? <DotAnimation /> : davExpireHolds}
+                                            / {isLoading ? (
+                                                <DotAnimation />
+                                            ) : (
+                                                // Governance DAV never expires: display 0 expired for governance wallet
+                                                isGov ? 0 : davExpireHolds
+                                            )}
                                         </h5>
                                     </div>
                                 </div>
                             </div>
                             <div className="carddetails2 mt-1">
                                 <h6 className="detailText d-flex" style={{ fontSize: "14px", textTransform: "capitalize" }}>
-                                    {chainId == 146 ? "SONIC - SWAP LEVY" : "GAS SWAP LEVY"}
+                                    {chainId == 146 ? "SONIC - HOLDERS FEE" : "HOLDERS FEE"}
                                 </h6>
                                 <h5>{formatWithCommas(claimableAmount)} {nativeSymbol}</h5>
                                 <div className="d-flex justify-content-center">
@@ -355,39 +375,30 @@ const AuctionSection = () => {
                                         </button>
                                     </p>
                                     <p className="mb-1">
-                                        <span className="detailText">
-                                            ROI / {nativeSymbol} -
-                                        </span>
+                                        <span className="detailText">ROI / {nativeSymbol} -</span>
                                         <span className="ms-1 second-span-fontsize">
-                                            {isLoading ? <DotAnimation /> : `${(formatWithCommas(totalInvestedPls)) || "0"}`} / {" "}
-                                            <span style={{
-                                                color: calculateTotalSum() > (totalInvestedPls || 0) ? '#28a745' : '#ff4081'
-                                            }}>
-                                                {isLoading ? (
-                                                    <DotAnimation />
-                                                ) : isNaN(calculateTotalSum()) ? (
-                                                    "Token Listing Process.."
-                                                ) : (
-                                                    formatWithCommas(Math.floor(calculateTotalSum()) || 0)
-                                                )} {nativeSymbol}
-                                            </span>
+                                            {isLoading ? (
+                                                <DotAnimation />
+                                            ) : (
+                                                <>
+                                                    {formatWithCommas(String(requiredPlsValue || 0))} / {""}
+                                                    <span style={{ color: (roiMeets === 'true' || roiMeets === true || (estimatedPlsValue >= requiredPlsValue && requiredPlsValue > 0)) ? '#28a745' : '#ff4081' }}>
+                                                        {formatWithCommas(String(Number.isFinite(estimatedPlsValue) ? Math.trunc(estimatedPlsValue) : 0))} {nativeSymbol}
+                                                    </span>
+                                                </>
+                                            )}
                                         </span>
                                     </p>
                                     <p className="mb-1">
                                         <span className="detailText">USER ROI % -</span>
                                         <span className="ms-1 second-span-fontsize">
-                                            {isLoading ? <DotAnimation /> : formatWithCommas(roi.toFixed(0))} %
+                                            {isLoading ? <DotAnimation /> : formatWithCommas(roiPctDisplay)} %
                                         </span>
                                     </p>
 
+                                    {/* USER APR removed as requested */}
                                     <p className="mb-1">
-                                        <span className="detailText">USER APR % -</span>
-                                        <span className="ms-1 second-span-fontsize">
-                                            {isLoading ? <DotAnimation /> : formatWithCommas(apr.toFixed(0))} %
-                                        </span>
-                                    </p>
-                                    <p className="mb-1">
-                                        <span className="detailText">{nativeSymbol} INDEX FUND -</span>
+                                        <span className="detailText">{nativeSymbol} INDEX -</span>
                                         <span className="ms-1 second-span-fontsize">
                                             {isLoading ? (
                                                 <DotAnimation />

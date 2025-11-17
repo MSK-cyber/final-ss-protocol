@@ -19,7 +19,7 @@ import { formatCountdown, formatTimeVerbose, formatWithCommas } from "../Constan
 
 const DataTable = () => {
   const chainId = useChainId();
-  const { signer, AllContracts } = useContext(ContractContext);
+  const { signer, AllContracts, provider } = useContext(ContractContext);
 
   const {
     davHolds,
@@ -74,7 +74,12 @@ const DataTable = () => {
         if (!signer || !address) return setAuthorized(false);
         // Try reading governance from SWAP on-chain
         const gov = await (async () => {
-          try { return (await AllContracts?.AuctionContract?.governanceAddress())?.toLowerCase(); } catch { return null; }
+          try {
+            const swap = AllContracts?.AuctionContract;
+            if (!swap) return null;
+            const readSwap = provider ? swap.connect(provider) : swap;
+            return (await readSwap.governanceAddress())?.toLowerCase();
+          } catch { return null; }
         })();
         const me = address?.toLowerCase();
         if (!cancelled) setAuthorized(!!gov ? gov === me : (!!AuthAddress && me === AuthAddress?.toLowerCase()));
@@ -83,7 +88,7 @@ const DataTable = () => {
       }
     })();
     return () => { cancelled = true; };
-  }, [AllContracts?.AuctionContract, signer, address, AuthAddress]);
+  }, [AllContracts?.AuctionContract, provider, signer, address, AuthAddress]);
   // Handle input change for tokenAddress or pairAddress for a specific user
   const handleInputChange = (tokenName, value) => {
     setInputValues((prev) => ({
@@ -197,7 +202,7 @@ const DataTable = () => {
       <p className="text-light">Please connect your wallet.</p>
     </div>
   ) : isAuction ? (
-    <div className="container datatablemarginbottom">
+    <div className="container-fluid datatablemarginbottom px-3" style={{maxWidth: '1040px'}}>
       {filteredTokens.length > 0 && (
       <div className="table-responsive ">
         <div>
@@ -397,7 +402,7 @@ const DataTable = () => {
     </div>
   ) : isAddToken ? (
     <>
-      <div className="container  datatablemarginbottom">
+      <div className="container-fluid datatablemarginbottom px-3" style={{maxWidth: '1040px'}}>
         <div className="table-responsive">
           <table className="table table-dark">
             <thead>

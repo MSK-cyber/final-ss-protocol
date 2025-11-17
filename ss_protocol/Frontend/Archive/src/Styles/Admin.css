@@ -1,0 +1,881 @@
+/* ============================================
+   ADMIN LAYOUT - PROFESSIONAL GOVERNANCE UI
+   Matches STATE DEX design system
+   ============================================ */
+
+/* Admin Container */
+.admin-container {
+  color: #fff;
+  font-family: 'Satoshi', sans-serif;
+}
+
+/* Base Card Styling */
+.admin-container .card {
+  background-color: var(--secondary-bg, #1e1e1e);
+  border: 1px solid var(--border-color, #333333);
+  border-radius: 10px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  transition: all 0.3s ease;
+}
+
+/* Loading Card */
+.admin-loading-card {
+  border: 1px solid rgba(255, 64, 129, 0.2);
+}
+
+.admin-spinner {
+  color: var(--accent-color, #ff4081);
+  width: 3rem;
+  height: 3rem;
+  border-width: 0.3rem;
+}
+
+/* ============================================
+   ACCESS DENIED / GOVERNANCE GATE
+   ============================================ */
+
+.admin-access-card {
+  max-width: 700px;
+  margin: 2rem auto;
+  border: 1px solid rgba(255, 64, 129, 0.3);
+}
+
+.admin-access-header {
+  text-align: center;
+  padding: 2rem 1rem 1rem;
+}
+
+.admin-lock-icon {
+  font-size: 4rem;
+  margin-bottom: 1rem;
+  opacity: 0.8;
+}
+
+.admin-access-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: #ff4081;
+}
+
+.admin-wallet-comparison {
+  margin: 2rem 0;
+  padding: 1.5rem;
+  background-color: rgba(0, 0, 0, 0.3);
+  border-radius: 8px;
+}
+
+.wallet-info-box {
+  padding: 1rem;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+  border: 1px solid;
+}
+
+.wallet-info-box.disconnected {
+  background-color: rgba(220, 53, 69, 0.1);
+  border-color: rgba(220, 53, 69, 0.3);
+}
+
+.wallet-info-box.required {
+  background-color: rgba(40, 167, 69, 0.1);
+  border-color: rgba(40, 167, 69, 0.3);
+}
+
+.wallet-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  margin-bottom: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.status-dot {
+  font-size: 0.5rem;
+}
+
+.wallet-address {
+  font-family: 'Courier New', monospace;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.address-text {
+  color: #fff;
+}
+
+.address-full {
+  font-size: 0.75rem;
+  opacity: 0.7;
+  background-color: rgba(255, 255, 255, 0.05);
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+}
+
+.wallet-divider {
+  text-align: center;
+  font-size: 1.5rem;
+  color: #6c757d;
+  margin: 0.5rem 0;
+}
+
+.admin-override-section {
+  margin-top: 2rem;
+  padding-top: 2rem;
+  border-top: 1px solid var(--border-color, #333333);
+}
+
+.override-header {
+  margin-bottom: 1rem;
+}
+
+.override-header h6 {
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #6c757d;
+}
+
+.override-input {
+  font-family: 'Courier New', monospace;
+  font-size: 0.9rem;
+}
+
+.override-btn {
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* ============================================
+   ADMIN HEADER
+   ============================================ */
+
+.admin-header-card {
+  background: linear-gradient(135deg, #1e1e1e 0%, #2a2a2a 100%);
+  border: 1px solid rgba(255, 64, 129, 0.2);
+}
+
+.admin-header-left {
+  flex: 1;
+}
+
+.admin-logo {
+  width: 60px;
+  height: 60px;
+  background: linear-gradient(135deg, #ff4081 0%, #ff79a7 100%);
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 8px rgba(255, 64, 129, 0.3);
+}
+
+.logo-icon {
+  font-size: 2rem;
+}
+
+.admin-title {
+  font-size: 1.5rem;
+  font-weight: 900;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  background: linear-gradient(90deg, #ff4081 0%, #ff79a7 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.admin-subtitle {
+  font-size: 0.875rem;
+  color: #b3b3b3;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+}
+
+.governance-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1.25rem;
+  background-color: rgba(40, 167, 69, 0.15);
+  border: 1px solid rgba(40, 167, 69, 0.3);
+  border-radius: 8px;
+}
+
+.governance-badge i {
+  font-size: 1.5rem;
+  color: #28a745;
+}
+
+.governance-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.governance-label {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #28a745;
+}
+
+.governance-address {
+  font-family: 'Courier New', monospace;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #fff;
+}
+
+/* ============================================
+   WORKFLOW GUIDE
+   ============================================ */
+
+.admin-workflow-card {
+  background: linear-gradient(135deg, #1e1e1e 0%, #252525 100%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.workflow-title {
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-size: 0.875rem;
+}
+
+.workflow-description {
+  font-size: 0.875rem;
+  color: #b3b3b3;
+  margin-bottom: 1.5rem;
+}
+
+.workflow-steps {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.workflow-step {
+  flex: 1;
+  min-width: 100px;
+  text-align: center;
+  padding: 1rem;
+  background-color: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  transition: all 0.3s ease;
+  position: relative;
+}
+
+.workflow-step:hover {
+  background-color: rgba(255, 64, 129, 0.1);
+  border-color: rgba(255, 64, 129, 0.3);
+  transform: translateY(-2px);
+}
+
+.step-number {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #6c757d;
+  background-color: rgba(255, 255, 255, 0.05);
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+}
+
+.step-icon {
+  font-size: 1.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.step-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #e9ecef;
+}
+
+.workflow-arrow {
+  font-size: 1.5rem;
+  color: #6c757d;
+  font-weight: 700;
+}
+
+/* ============================================
+   SIDEBAR NAVIGATION
+   ============================================ */
+
+.admin-sidebar-card {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  position: sticky;
+  top: 20px;
+}
+
+.admin-sidebar-header {
+  background-color: rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid var(--border-color, #333333);
+  padding: 1rem;
+}
+
+.admin-sidebar-header h6 {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: #b3b3b3;
+}
+
+.admin-nav {
+  display: flex;
+  flex-direction: column;
+}
+
+.admin-nav-link {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  color: #e9ecef;
+  text-decoration: none;
+  border-left: 3px solid transparent;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  transition: all 0.3s ease;
+  background-color: transparent;
+}
+
+.admin-nav-link:hover {
+  background-color: rgba(255, 255, 255, 0.05);
+  border-left-color: rgba(255, 64, 129, 0.5);
+  color: #fff;
+}
+
+.admin-nav-link.active {
+  background: linear-gradient(90deg, rgba(255, 64, 129, 0.2) 0%, transparent 100%);
+  border-left-color: var(--accent-color, #ff4081);
+  color: #fff;
+  font-weight: 600;
+}
+
+.nav-icon {
+  font-size: 1.5rem;
+  width: 2rem;
+  text-align: center;
+}
+
+.nav-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  flex: 1;
+}
+
+.nav-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.nav-subtitle {
+  font-size: 0.7rem;
+  color: #6c757d;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+}
+
+.admin-nav-link.active .nav-subtitle {
+  color: #ff79a7;
+}
+
+.nav-divider {
+  height: 1px;
+  background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.2) 50%, transparent 100%);
+  margin: 0.5rem 0;
+}
+
+/* ============================================
+   PRIMARY BUTTONS & FORMS
+   ============================================ */
+
+.admin-container .btn-primary {
+  background: linear-gradient(90deg, #ff4081 0%, #ff79a7 100%);
+  border: none;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 0.75rem 1.5rem;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 4px rgba(255, 64, 129, 0.3);
+}
+
+.admin-container .btn-primary:hover {
+  background: linear-gradient(90deg, #ff79a7 0%, #ff4081 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(255, 64, 129, 0.4);
+}
+
+.admin-container .btn-primary:active {
+  transform: translateY(0);
+}
+
+/* ============================================
+   FORM CONTROLS
+   ============================================ */
+
+.admin-container .form-control {
+  background-color: var(--secondary-bg, #1e1e1e);
+  color: #fff;
+  border: 1px solid var(--border-color, #333333);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  font-size: 0.9rem;
+  transition: all 0.3s ease;
+}
+
+.admin-container .form-control:focus {
+  border-color: var(--accent-color, #ff4081);
+  box-shadow: 0 0 0 0.25rem rgba(255, 64, 129, 0.25);
+  background-color: var(--secondary-bg, #1e1e1e);
+  color: #fff;
+}
+
+.admin-container .form-control::placeholder {
+  color: #6c757d;
+}
+
+.admin-container .form-select {
+  background-color: var(--secondary-bg, #1e1e1e);
+  color: #fff;
+  border-color: var(--border-color, #333333);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  cursor: pointer;
+}
+
+.admin-container .form-select:focus {
+  border-color: var(--accent-color, #ff4081);
+  box-shadow: 0 0 0 0.25rem rgba(255, 64, 129, 0.25);
+}
+
+.admin-container .form-label {
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #b3b3b3;
+  margin-bottom: 0.5rem;
+}
+
+/* ============================================
+   SECONDARY BUTTONS
+   ============================================ */
+
+.admin-container .btn-outline-secondary {
+  border: 2px solid #6c757d;
+  color: #e9ecef;
+  background-color: transparent;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  transition: all 0.3s ease;
+}
+
+.admin-container .btn-outline-secondary:hover {
+  background-color: #6c757d;
+  color: #fff;
+  border-color: #6c757d;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(108, 117, 125, 0.3);
+}
+
+.admin-container .btn-outline-info {
+  border: 2px solid #0dcaf0;
+  color: #0dcaf0;
+  background-color: transparent;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  transition: all 0.3s ease;
+}
+
+.admin-container .btn-outline-info:hover {
+  background-color: #0dcaf0;
+  color: #000;
+  border-color: #0dcaf0;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(13, 202, 240, 0.3);
+}
+
+.admin-container .btn-success {
+  background: linear-gradient(90deg, #28a745 0%, #34ce57 100%);
+  border: none;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  transition: all 0.3s ease;
+}
+
+.admin-container .btn-success:hover {
+  background: linear-gradient(90deg, #34ce57 0%, #28a745 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(40, 167, 69, 0.3);
+}
+
+.admin-container .btn-danger {
+  background: linear-gradient(90deg, #dc3545 0%, #e74c5c 100%);
+  border: none;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  transition: all 0.3s ease;
+}
+
+.admin-container .btn-danger:hover {
+  background: linear-gradient(90deg, #e74c5c 0%, #dc3545 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(220, 53, 69, 0.3);
+}
+
+.admin-container .btn-warning {
+  background: linear-gradient(90deg, #ffc107 0%, #ffd454 100%);
+  border: none;
+  color: #000;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  transition: all 0.3s ease;
+}
+
+.admin-container .btn-warning:hover {
+  background: linear-gradient(90deg, #ffd454 0%, #ffc107 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(255, 193, 7, 0.3);
+}
+
+/* ============================================
+   STATUS BADGES
+   ============================================ */
+
+.admin-container .status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border: 1px solid;
+}
+
+.admin-container .status-badge.connected {
+  background-color: rgba(40, 167, 69, 0.15);
+  color: #28a745;
+  border-color: rgba(40, 167, 69, 0.3);
+}
+
+.admin-container .status-badge.disconnected {
+  background-color: rgba(220, 53, 69, 0.15);
+  color: #dc3545;
+  border-color: rgba(220, 53, 69, 0.3);
+}
+
+.admin-container .status-badge.pending {
+  background-color: rgba(255, 193, 7, 0.15);
+  color: #ffc107;
+  border-color: rgba(255, 193, 7, 0.3);
+}
+
+.admin-container .status-badge.success {
+  background-color: rgba(40, 167, 69, 0.15);
+  color: #28a745;
+  border-color: rgba(40, 167, 69, 0.3);
+}
+
+/* ============================================
+   ALERTS
+   ============================================ */
+
+.admin-container .alert {
+  border-radius: 8px;
+  border: 1px solid;
+  padding: 1rem 1.25rem;
+  font-size: 0.9rem;
+}
+
+.admin-container .alert-info {
+  background-color: rgba(13, 202, 240, 0.1);
+  border-color: rgba(13, 202, 240, 0.3);
+  color: #0dcaf0;
+}
+
+.admin-container .alert-warning {
+  background-color: rgba(255, 193, 7, 0.1);
+  border-color: rgba(255, 193, 7, 0.3);
+  color: #ffc107;
+}
+
+.admin-container .alert-danger {
+  background-color: rgba(220, 53, 69, 0.1);
+  border-color: rgba(220, 53, 69, 0.3);
+  color: #dc3545;
+}
+
+.admin-container .alert-success {
+  background-color: rgba(40, 167, 69, 0.1);
+  border-color: rgba(40, 167, 69, 0.3);
+  color: #28a745;
+}
+
+/* ============================================
+   TABLE STYLING
+   ============================================ */
+
+.admin-container .table {
+  background-color: var(--secondary-bg, #1e1e1e);
+  color: #fff;
+  border: 1px solid var(--border-color, #333333);
+}
+
+.admin-container .table-dark {
+  background-color: var(--secondary-bg, #1e1e1e);
+  color: #fff;
+}
+
+.admin-container .table-dark th {
+  border-color: var(--border-color, #333333);
+  font-weight: 700;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  background-color: rgba(255, 255, 255, 0.03);
+  padding: 1rem;
+}
+
+.admin-container .table-dark td {
+  border-color: var(--border-color, #333333);
+  vertical-align: middle;
+  padding: 1rem;
+  font-size: 0.9rem;
+}
+
+.admin-container .table-dark tbody tr:hover {
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+/* ============================================
+   CARD ENHANCEMENTS
+   ============================================ */
+
+.admin-container .card + .card { 
+  margin-top: 1.5rem; 
+}
+
+.admin-container .card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  transition: box-shadow 0.3s ease;
+}
+
+.admin-container .card-header {
+  background-color: rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid var(--border-color, #333333);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-size: 0.85rem;
+  padding: 1rem 1.25rem;
+}
+
+.admin-container .card-footer {
+  background-color: rgba(255, 255, 255, 0.03);
+  border-top: 1px solid var(--border-color, #333333);
+  padding: 1rem 1.25rem;
+}
+
+/* ============================================
+   LOADING STATES
+   ============================================ */
+
+.admin-container .loading-overlay {
+  opacity: 0.6;
+  pointer-events: none;
+  position: relative;
+}
+
+.admin-container .loading-overlay::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ============================================
+   RESPONSIVE DESIGN
+   ============================================ */
+
+@media (max-width: 992px) {
+  .workflow-steps {
+    flex-direction: column;
+  }
+  
+  .workflow-arrow {
+    transform: rotate(90deg);
+    margin: 0.5rem 0;
+  }
+  
+  .admin-sidebar-card {
+    position: relative;
+    top: 0;
+  }
+}
+
+@media (max-width: 768px) {
+  .admin-header-card .d-flex {
+    flex-direction: column;
+    gap: 1rem;
+  }
+  
+  .admin-header-left,
+  .admin-header-right {
+    width: 100%;
+  }
+  
+  .governance-badge {
+    justify-content: center;
+  }
+  
+  .admin-title {
+    font-size: 1.25rem;
+  }
+  
+  .admin-logo {
+    width: 50px;
+    height: 50px;
+  }
+  
+  .logo-icon {
+    font-size: 1.5rem;
+  }
+  
+  .admin-nav-link {
+    padding: 0.75rem 1rem;
+  }
+  
+  .nav-icon {
+    font-size: 1.25rem;
+  }
+  
+  .nav-title {
+    font-size: 0.85rem;
+  }
+  
+  .nav-subtitle {
+    font-size: 0.65rem;
+  }
+  
+  .workflow-step {
+    min-width: 100%;
+  }
+  
+  .address-full {
+    display: none !important;
+  }
+}
+
+@media (max-width: 576px) {
+  .admin-container {
+    padding: 0.5rem;
+  }
+  
+  .admin-container .card {
+    border-radius: 8px;
+  }
+  
+  .admin-container .btn {
+    font-size: 0.85rem;
+    padding: 0.6rem 1rem;
+  }
+  
+  .step-label {
+    font-size: 0.7rem;
+  }
+  
+  .step-icon {
+    font-size: 1.25rem;
+  }
+}
+
+/* ============================================
+   UTILITY CLASSES
+   ============================================ */
+
+.admin-container .text-uppercase {
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.admin-container .font-monospace {
+  font-family: 'Courier New', monospace;
+}
+
+.admin-container .text-accent {
+  color: var(--accent-color, #ff4081);
+}
+
+.admin-container .border-accent {
+  border-color: var(--accent-color, #ff4081) !important;
+}
+
+.admin-container .bg-accent {
+  background-color: rgba(255, 64, 129, 0.15) !important;
+}
+
+/* ============================================
+   ANIMATIONS
+   ============================================ */
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.admin-container .card {
+  animation: fadeIn 0.3s ease;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.admin-spinner {
+  animation: pulse 1.5s ease-in-out infinite;
+}

@@ -5,7 +5,8 @@ import AddTokenSection from "./Cards/AddTokenSection";
 
 const InfoCards = () => {
   const location = useLocation();
-  const isAuction = location.pathname === "/auction";
+  // Treat both legacy "/auction" and new "/davpage" as the main DAV Mint page
+  const isAuction = location.pathname === "/auction" || location.pathname === "/davpage";
   const isAddToken = location.pathname === "/AddToken";
 
   return (

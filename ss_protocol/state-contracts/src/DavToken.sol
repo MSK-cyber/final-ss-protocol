@@ -37,65 +37,50 @@ interface IPair {
 }
 
 /**
- * @title DAV_V3 (Decentralized Auction Voucher Token)
+ * @title DAV_V3 - Decentralized Auction Voucher Token
  * @author State Protocol Team
- * @notice DAV tokens are time-limited vouchers (30-day expiry) that grant access to State Protocol auctions
- * @dev Complex token economics with referral system, holder rewards, ROI-based claims, and batch tracking
- * 
- * KEY FEATURES:
- * ============
- * 1. Time-Limited Tokens: 30-day expiry from mint (30-day reset on governance transfer)
- * 2. Holder Rewards: 10% of mint fees distributed to active DAV holders
- * 3. Referral System: 5% bonus for referrers (added to claimable rewards)
- * 4. ROI Verification: Must maintain portfolio value >= DAV mint cost to claim rewards
- * 5. Buy & Burn: 80% of mint fees sent to BuyAndBurnController for STATE buyback
- * 6. Batch Tracking: Complete mint/expiry history preserved for transparency
- * 
- * ARCHITECTURE:
- * ============
- * - Solidity 0.8.20: Built-in overflow/underflow protection
+ * @notice Time-limited voucher tokens (30-day expiry) granting access to State Protocol auctions
+ * @dev Implements token economics with referral system, holder rewards, ROI-based claims, and batch tracking
+ *
+ * @custom:features
+ * - Time-Limited Access: 30-day expiry from mint (refreshed on governance transfers)
+ * - Holder Rewards: 10% of mint fees distributed proportionally to active DAV holders
+ * - Referral System: 5% bonus added to referrer's claimable rewards
+ * - ROI Verification: Portfolio value must meet or exceed DAV mint cost to claim rewards
+ * - Buy & Burn: 80% of mint fees sent to BuyAndBurnController for STATE buyback
+ * - Batch Tracking: Complete mint/expiry history preserved for transparency
+ *
+ * @custom:architecture
+ * - Solidity 0.8.20 with built-in overflow/underflow protection
  * - OpenZeppelin: ERC20, Ownable, ReentrancyGuard, SafeERC20
- * - Library Integration: Distribution, ReferralCodeLib, TimeUtilsLib
- * - External Dependencies: SWAP_V3, AuctionAdmin, BuyAndBurnController
- * 
- * GAS DESIGN PHILOSOPHY:
- * =====================
- * This contract intentionally prioritizes TRANSPARENCY and ACCURACY over gas optimization:
- * - Loops iterate holders/batches for real-time calculations
- * - Full mint history preserved (including expired batches)
- * - No caching or snapshots to avoid staleness
- * - MAX_HOLDERS = 5,000 caps system size
- * - PulseChain context: 1 PLS ≈ 0.00000396 ETH (very low gas costs)
- * 
- * WORKFLOW:
- * ========
- * 1. User mints DAV by paying 1,500,000 PLS per token (1.5 Million PLS)
- * 2. Funds distributed: 80% liquidity, 10% holders, 5% dev, 5% referral
+ * - Libraries: Distribution, ReferralCodeLib, TimeUtilsLib
+ * - External: SWAP_V3, AuctionAdmin, BuyAndBurnController
+ *
+ * @custom:design-philosophy
+ * Intentionally prioritizes transparency and accuracy over gas optimization:
+ * - Real-time calculations via iteration (no caching)
+ * - Complete mint history preserved (including expired batches)
+ * - Bounded by MAX_HOLDERS = 2,500 wallets
+ * - PulseChain context: extremely low gas costs (1 PLS ≈ 0.00000396 ETH)
+ *
+ * @custom:workflow
+ * 1. User mints DAV by paying 1,500,000 PLS per token
+ * 2. Funds distributed: 80% buyback, 10% holders, 5% dev, 5% referral
  * 3. DAV expires after 30 days (refreshed if transferred from governance)
  * 4. Holders accumulate rewards from subsequent mints
- * 5. Claim rewards if ROI check passes (portfolio value >= DAV cost)
+ * 5. Claim rewards after ROI check (portfolio value >= DAV cost)
  * 6. After 1000 days, governance can reclaim unclaimed rewards
- * 
- * SECURITY NOTES:
- * ==============
+ *
+ * @custom:security
  * - ReentrancyGuard on all state-changing functions
- * - Transfers pausable (governance emergency control)
- * - Governance uses multi-sig for security
- * - All low-level calls have explicit success checks
+ * - Pausable transfers (governance emergency control)
+ * - Multi-sig governance
+ * - Explicit success checks on all low-level calls
  * - Solidity 0.8.20 automatic overflow protection
- * 
- * AUDIT NOTES:
- * ===========
- * - Finding #1 (Reentrancy): FALSE POSITIVE - nonReentrant modifier present, CEI pattern followed
- * - Finding #2 (Unbounded Loop): INTENTIONAL - max 50 tokens, early exit, view function only
- * - Finding #3 (Batch Accounting): INTENTIONAL - graceful backward compatibility for governance
- * - Finding #4 (Unchecked Calls): FALSE POSITIVE - all calls have require(success) checks
- * - Finding #5 (Integer Overflow): FALSE POSITIVE - Solidity 0.8.20 built-in protection
- * - Finding #6-10 (Gas): INTENTIONAL - transparency/accuracy prioritized over optimization
  */
 contract DAV_V3 is
     ERC20,
-    Ownable(msg.sender),
+    Ownable,
     ReentrancyGuard // IERC20 initialization
 {
     //NOTE: some Functions uses loops to get values which can be gas-intensive, but necessary for accurate, real-time calculation of active token balances.
@@ -112,107 +97,121 @@ contract DAV_V3 is
     // ============ Protocol Constants ============
     
     /// @notice Maximum total supply of DAV tokens (includes 2,000 initial governance mint)
-    /// @dev Hard cap to prevent unlimited inflation
-    uint256 public constant MAX_SUPPLY = 10000000 ether; // 10,000,000 DAV Tokens (hard cap, includes 2,000 gov mint)
+    /// @dev Hard cap prevents unlimited inflation - enforced in mintDAV() function
+    ///      Total available for public minting: 9,998,000 DAV (MAX_SUPPLY - INITIAL_GOV_MINT)
+    uint256 public constant MAX_SUPPLY = 10000000 ether;
     
     /// @notice Maximum number of unique DAV holders allowed
-    /// @dev Caps system size to keep gas costs manageable for loops
-    /// @dev Audit Note: Bounds all holder iterations to prevent unbounded gas consumption
-    uint256 public constant MAX_HOLDERS = 5000; // 5,000 wallets limit per requirements
+    /// @dev Caps system size to keep gas costs manageable for iteration-based calculations
+    ///      All holder loops are bounded by this constant to prevent unbounded gas consumption
+    ///      Enforced in mintDAV() and Distribution.updateDAVHolderStatus()
+    uint256 public constant MAX_HOLDERS = 2500;
     
     /// @notice Cost to mint 1 DAV token in PLS
-    /// @dev PulseChain native token: 1 PLS ≈ 0.00000396 ETH (very low cost)
-    uint256 public constant TOKEN_COST = 1500000 ether; // 1,500,000 PLS per DAV (1.5 Million PLS)
+    /// @dev PulseChain native token: 1 PLS ≈ 0.00000396 ETH
+    ///      Cost is 1,500,000 PLS per DAV token minted
+    uint256 public constant TOKEN_COST = 1500000 ether;
     
     /// @notice Referral bonus percentage (5% of mint fees)
-    /// @dev Added to referrer's claimable holder rewards (not paid immediately)
-    uint256 public constant REFERRAL_BONUS = 5; // 5% bonus for referrers
+    /// @dev Added to referrer's claimable holder rewards (not immediately distributed)
+    ///      Referrer must have active DAV to claim accumulated rewards
+    uint256 public constant REFERRAL_BONUS = 5;
     
-    /// @notice Liquidity share percentage (80% of mint fees)
-    /// @dev Sent to BuyAndBurnController for STATE token buyback and burn
-    uint256 public constant LIQUIDITY_SHARE = 80; // 80% LIQUIDITY SHARE
+    /// @notice Liquidity/buyback share percentage (80% of mint fees)
+    /// @dev Sent to BuyAndBurnController for STATE token buyback and burn operations
+    ///      This is the primary mechanism for creating STATE demand and reducing supply
+    uint256 public constant LIQUIDITY_SHARE = 80;
     
     /// @notice Development share percentage (5% of mint fees)
-    /// @dev Distributed to dev wallets registered in AuctionAdmin
-    uint256 public constant DEVELOPMENT_SHARE = 5; // 5% DEV SHARE
+    /// @dev Distributed proportionally to dev wallets registered in AuctionAdmin
+    ///      Distribution percentages and wallet addresses managed by AuctionAdmin contract
+    uint256 public constant DEVELOPMENT_SHARE = 5;
     
     /// @notice Holder rewards share percentage (10% of mint fees)
-    /// @dev Distributed proportionally to active DAV holders
-    uint256 public constant HOLDER_SHARE = 10; // 10% HOLDER SHARE
+    /// @dev Distributed proportionally to all active DAV holders at time of each mint
+    ///      Rewards accumulate in holderRewards mapping and can be claimed via claimReward()
+    uint256 public constant HOLDER_SHARE = 10;
     
-    /// @notice Basis points for percentage calculations
+    /// @notice Basis points for percentage calculations (100%)
+    /// @dev Used to validate total percentage allocations equal 100%
+    ///      HOLDER_SHARE + LIQUIDITY_SHARE + DEVELOPMENT_SHARE + REFERRAL_BONUS = 100
     uint256 public constant BASIS_POINTS = 10000;
     
     /// @notice Initial governance allocation minted at deployment
-    /// @dev Marked as fromGovernance=true, excluded from holder rewards
+    /// @dev Marked as fromGovernance=true to exclude from holder reward distributions
+    ///      Used for initial protocol setup, testing, and promotional activities
+    ///      These tokens do not earn holder rewards to prevent unfair advantage
     uint256 public constant INITIAL_GOV_MINT = 2000 ether;
     
     /// @notice STATE token contract address
-    /// @dev Set automatically in constructor (previously required manual configuration)
+    /// @dev Set automatically in constructor from deployment parameter
+    ///      Used for ROI calculations and portfolio value assessment
     address public STATE_TOKEN;
     
-    /// @notice Maximum tokens per user (legacy constant, not currently enforced)
-    uint256 public constant MAX_TOKEN_PER_USER = 100;
-    
     /// @notice DAV token expiry period (30 days from mint)
-    /// @dev Tokens become inactive after expiry but history is preserved
-    /// @dev Audit Note: Expiry tracked per-batch to maintain complete mint history
-    uint256 public constant DAV_TOKEN_EXPIRE = 30 days; // 30 days expiry per requirements
-
-    /// @notice Cycle allocation count for future feature expansion
-    /// @dev Currently unused, reserved for potential cycle-based mechanics
-    uint256 public constant CYCLE_ALLOCATION_COUNT = 10;
+    /// @dev Tokens become inactive after expiry but complete history is preserved for transparency
+    ///      Expiry tracked per-batch, allowing mixed active/expired tokens in same wallet
+    ///      Governance transfers reset expiry timer to fresh 30 days
+    uint256 public constant DAV_TOKEN_EXPIRE = 30 days;
     
     // ============ Analytics & Tracking ============
     
-    /// @notice Total referral rewards distributed to referrers (lifetime)
-    /// @dev Tracks historical referral payouts for analytics
+    /// @notice Cumulative referral rewards distributed to referrers (lifetime analytics)
+    /// @dev Tracks total PLS allocated as referral bonuses since contract deployment
+    ///      Used for analytics and transparency - actual claimable amounts in holderRewards mapping
     uint256 public totalReferralRewardsDistributed;
     
-    /// @notice Total DAV tokens minted (excluding initial gov mint tracked separately)
-    /// @dev Incremented on each mintDAV call
+    /// @notice Total DAV tokens minted via mintDAV() function (public minting)
+    /// @dev Excludes INITIAL_GOV_MINT (2,000 DAV) which is tracked separately
+    ///      Combined with INITIAL_GOV_MINT equals total circulating supply
     uint256 public mintedSupply;
     
-    /// @notice Total PLS allocated to liquidity/buyback (80% of mint fees)
-    /// @dev Sent to BuyAndBurnController for STATE buyback operations
+    /// @notice Total PLS allocated to buyback operations (80% of all mint fees)
+    /// @dev Cumulative amount sent to BuyAndBurnController for STATE token buyback and burn
+    ///      Primary deflationary mechanism reducing STATE supply over time
     uint256 public totalLiquidityAllocated;
     
-    /// @notice Total PLS allocated to development (5% of mint fees)
-    /// @dev Distributed to dev wallets via AuctionAdmin
+    /// @notice Total PLS allocated to development team (5% of all mint fees)
+    /// @dev Cumulative amount distributed to dev wallets based on AuctionAdmin configuration
+    ///      Distribution percentages and wallet addresses managed by AuctionAdmin contract
     uint256 public totalDevelopmentAllocated;
     // ============ Governance & Protocol Addresses ============
     
-    /// @notice Governance address with special privileges
-    /// @dev Uses multi-sig for security
-    /// @dev Can be updated via timelock (proposeGovernance + confirmGovernance) or immediately (transferGovernanceImmediate)
-    /// @dev SWAP contract can also transfer governance for protocol-wide coordination
+    /// @notice Governance address with administrative privileges
+    /// @dev Controls emergency pause functions and development wallet management
+    ///      Governance transfers ONLY through AuctionAdmin.proposeProtocolGovernance() with 7-day timelock
+    ///      When governance transfers DAV to users, expiry timer resets to fresh 30 days
     address public governance;
     
     /// @notice SWAP_V3 (AuctionSwap) contract address
-    /// @dev Used for ROI calculations (reads auction token prices)
-    /// @dev Can transfer governance immediately for protocol coordination
+    /// @dev Used for ROI calculations: reads auction token prices, cycles, and schedule information
+    ///      Critical for portfolio value assessment in claimReward() ROI verification
     address public swapContract;
     
     /// @notice AuctionAdmin contract address
-    /// @dev Manages development fee wallet registry
-    /// @dev This contract reads wallet config via IAuctionAdmin interface
+    /// @dev Manages development fee wallet registry and protocol-wide governance transfers
+    ///      Only AuctionAdmin can call transferGovernanceImmediate() with 7-day timelock enforcement
+    ///      Reads dev wallet configuration via IAuctionAdmin.getDevelopmentFeeWalletsInfo()
     address public auctionAdmin;
     
     /// @notice BuyAndBurnController contract address
-    /// @dev Receives 80% of mint fees for STATE buyback and burn
-    /// @dev Also used for STATE/WPLS pool price queries in ROI calculations
+    /// @dev Dual purpose: (1) Receives 80% of mint fees for STATE buyback and burn operations
+    ///                     (2) Provides STATE/WPLS pool address for ROI price calculations
+    ///      Primary mechanism for creating STATE demand and deflationary pressure
     address public buyAndBurnController;
     
     // ============ Control Flags ============
     
     /// @notice Transfer pause flag (governance emergency control)
-    /// @dev When true, only governance can transfer tokens
-    /// @dev Useful for emergency situations or protocol migrations
+    /// @dev When true, only governance can transfer DAV tokens (all other transfers blocked)
+    ///      Used for emergency situations, security incidents, or protocol migrations
+    ///      Does not affect minting or reward claiming (controlled separately by 'paused' flag)
     bool public transfersPaused = false;
     
     /// @notice Contract pause flag (governance emergency control)
-    /// @dev When true, minting and reward claims are disabled
-    /// @dev Transfers still respect transfersPaused separately
+    /// @dev When true, minting (mintDAV) and reward claiming (claimReward) are disabled
+    ///      Transfers are controlled separately by 'transfersPaused' flag
+    ///      Used for emergency maintenance or security incident response
     bool public paused = false;
 
     // ============ Data Structures ============
@@ -220,35 +219,30 @@ contract DAV_V3 is
     /// @notice Nonce for referral code generation (ensures uniqueness)
     /// @dev Incremented each time a referral code is generated for a user
     mapping(address => uint256) private userNonce;
-    
-    /// @notice Governance proposal pending confirmation (7-day timelock)
-    /// @dev Used by proposeGovernance/confirmGovernance functions
-    struct GovernanceProposal {
-        address newGovernance;
-        uint256 proposedAt;
-    }
-    GovernanceProposal public pendingGovernance;
 
     /// @notice Tracks lifetime referral rewards earned by each address
-    /// @dev For analytics only - actual claimable rewards in holderState.holderRewards
+    /// @dev Analytics only - actual claimable rewards stored in holderState.holderRewards
+    ///      Sum of all referral bonuses earned since contract deployment
     mapping(address => uint256) public referralRewards;
     
     /// @notice Mint batch structure for tracking individual DAV mints
-    /// @dev Preserves complete mint history including expired batches
-    /// @dev Audit Note: Intentionally keeps all batches for transparency (not pruned)
+    /// @dev Each mint creates a new batch with timestamp for 30-day expiry tracking
+    ///      fromGovernance flag excludes promotional/airdrop tokens from reward distributions
     struct MintBatch {
-        uint256 amount;         // Amount of DAV in this batch
-        uint256 timestamp;      // Mint time (for expiry calculation)
-        bool fromGovernance;    // If true, excluded from holder reward calculations
+        uint256 amount;         // DAV tokens in this batch
+        uint256 timestamp;      // Mint timestamp (expiry = timestamp + 30 days)
+        bool fromGovernance;    // If true, tokens don't earn holder rewards
     }
 
-    /// @notice All mint batches for each user (complete history)
-    /// @dev Audit Note: Array grows unbounded but capped by MAX_SUPPLY and 2-day expiry
-    /// @dev Intentional design: preserves full history for UI/analytics
+    /// @notice Complete mint history for each user (all batches preserved)
+    /// @dev Intentionally preserves expired batches for full transparency and audit trail
+    ///      Growth naturally bounded by MAX_SUPPLY cap and 30-day expiry turnover
+    ///      Enables users to view complete mint/expiry history via getMintTimestamps()
     mapping(address => MintBatch[]) public mintBatches;
     
-    /// @notice Daily mint tracking (aligned to 17:00 GMT+3 / 5 PM GMT+3 like SWAP contract)
-    /// @dev Maps day index to total DAV minted that day
+    /// @notice Daily mint tracking aligned to GMT+3 17:00 (5 PM) boundary
+    /// @dev Maps day index to total DAV minted that day for analytics
+    ///      Day calculation: (calculateNextClaimStartGMTPlus3(timestamp) - 1 day) / 1 day
     mapping(uint256 => uint256) public mintedByDayIndex;
 
     event RewardsClaimed(address indexed user, uint256 amount);
@@ -285,7 +279,7 @@ contract DAV_V3 is
         address _swapContract,
         string memory tokenName,
         string memory tokenSymbol // Should be "pDAV1" for mainnet
-    ) ERC20(tokenName, tokenSymbol) {
+    ) ERC20(tokenName, tokenSymbol) Ownable(msg.sender) {
         require(
             _stateToken != address(0) &&
                 _auctionAdmin != address(0) &&
@@ -297,14 +291,13 @@ contract DAV_V3 is
         auctionAdmin = _auctionAdmin;
         buyAndBurnController = _buyAndBurnController;
         swapContract = _swapContract;
-        //canMintDAV = false; // Minting disabled until dev wallets are set in AuctionAdmin
-        // Initial governance allocation
+        
+        // Mint initial governance allocation (2,000 DAV)
         _mint(_gov, INITIAL_GOV_MINT);
         mintedSupply += INITIAL_GOV_MINT;
-        // IMPORTANT: Seed an initial batch for governance so batch-based
-        // accounting works when governance transfers tokens. Without this,
-        // _applyBatchTransfer would find no source batches and revert with
-        // "Batch accounting mismatch" even though ERC20 transfer succeeded.
+        
+        // Create initial batch for governance allocation to enable batch-based accounting
+        // Without this, governance transfers would fail batch accounting validation
         mintBatches[_gov].push(
             MintBatch({
                 amount: INITIAL_GOV_MINT,
@@ -314,8 +307,9 @@ contract DAV_V3 is
         );
         StateToken = IERC20(_stateToken);
         
-        // FIXED: Set STATE_TOKEN in constructor to eliminate manual configuration step
+        // Set STATE_TOKEN address for ROI calculations
         STATE_TOKEN = _stateToken;
+        renounceOwnership();
     }
     // Burn-to-claim removed: setSwapAddress no longer needed
 
@@ -325,7 +319,10 @@ contract DAV_V3 is
     }
     
     modifier onlyGovernanceOrSwap() {
-        require(msg.sender == governance || msg.sender == swapContract, "Caller is not governance or swap");
+        require(
+            msg.sender == governance || msg.sender == swapContract,
+            "Caller is not governance or swap"
+        );
         _;
     }
     // Restriction of transffering
@@ -336,45 +333,17 @@ contract DAV_V3 is
         );
         _;
     }
-    // Step 1: Propose a new governance with timelock
-    function proposeGovernance(address newGovernance) external onlyGovernance {
-        require(newGovernance != address(0), "Invalid governance address");
-        pendingGovernance = GovernanceProposal(
     
-            newGovernance,
-            block.timestamp + 7 days
-        );
-    }
-
-    // Step 2: Confirm governance after timelock expires
-    function confirmGovernance() external onlyGovernance {
-        require(
-            pendingGovernance.newGovernance != address(0),
-            "No pending proposal"
-        );
-        require(
-            block.timestamp >= pendingGovernance.proposedAt,
-            "Timelock not expired"
-        );
-
-        address oldGovernance = governance;
-        governance = pendingGovernance.newGovernance;
-        
-        // Clear pending governance
-        pendingGovernance = GovernanceProposal(address(0), 0);
-        
-        emit GovernanceUpdated(oldGovernance, governance);
-    }
-    
-    // Immediate governance transfer function (no timelock)
-    function transferGovernanceImmediate(address newGovernance) external onlyGovernanceOrSwap {
+    /// @notice Transfer governance via AuctionAdmin (for centralized governance transfer)
+    /// @dev Only callable by AuctionAdmin during protocol-wide governance transfer
+    /// @dev No timelock here - timelock enforced in AuctionAdmin.proposeProtocolGovernance()
+    /// @param newGovernance Address of new governance
+    function transferGovernanceImmediate(address newGovernance) external {
+        require(msg.sender == auctionAdmin, "Only admin");
         require(newGovernance != address(0), "Invalid governance address");
         
         address oldGovernance = governance;
         governance = newGovernance;
-
-        // Clear pending
-        delete pendingGovernance;
 
         emit GovernanceUpdated(oldGovernance, governance);
     }
@@ -468,13 +437,6 @@ contract DAV_V3 is
         emit ContractUnpaused(msg.sender);
     }
     
-    /**
-     * @notice Enable or disable token transfers
-     * @param _enabled True to enable transfers, false to disable
-     */
-    function setTransfersEnabled(bool _enabled) external onlyGovernance {
-        transfersPaused = !_enabled;
-    }
     // - Restricts approval unless transfers are allowed or the caller is governance
     function approve(address spender, uint256 amount) public override whenTransfersAllowed returns (bool) {
         return super.approve(spender, amount);
@@ -508,36 +470,35 @@ contract DAV_V3 is
     // ================= Internal helpers =================
     
     /**
-     * @notice Internal function to move mint batches from sender to recipient during transfer
-     * @dev Preserves complete mint history while moving tokens FIFO (oldest first)
-     * @dev Special handling for governance transfers to make tokens reward-eligible
-     * 
-     * BATCH TRANSFER LOGIC:
-     * ====================
-     * 1. Consumes from oldest sender batches first (FIFO order)
-     * 2. Preserves original timestamp and fromGovernance flag
-     * 3. Special case: Governance → User transfers reset timestamp and remove governance flag
-     * 4. Backward compatibility: Synthetic batch if governance has no source batches
-     * 
-     * GOVERNANCE TRANSFER BEHAVIOR:
-     * ============================
-     * When governance transfers to regular user:
-     * - Timestamp reset to current time (starts fresh 2-day expiry countdown)
-     * - fromGovernance flag set to false (makes tokens reward-eligible)
-     * - Allows governance to "reactivate" expired tokens by transferring them
-     * 
-     * BACKWARD COMPATIBILITY:
-     * =======================
-     * If governance has no source batches (e.g., initial constructor mint before fix):
-     * - Creates synthetic batch with fromGovernance=true
-     * - Prevents transfer from reverting
-     * - Maintains reward exclusion for governance-sourced tokens
+     * @notice Internal function to transfer mint batches between accounts
+     * @dev Preserves complete mint history while moving tokens FIFO (first-in-first-out)
+     *      Special handling for governance transfers to refresh expiry and enable rewards
      * 
      * @param from Address transferring tokens
      * @param to Address receiving tokens
      * @param amount Amount of tokens to transfer
-     * @custom:audit Addresses Finding #3 - Synthetic batch is intentional backward compatibility
-     * @custom:audit Synthetic batch only for governance, marked fromGovernance=true (excluded from rewards)
+     *
+     * @custom:batch-logic
+     * - Processes batches in chronological order (oldest first)
+     * - Sets consumed batches to amount=0 (avoids mid-loop array shifts)
+     * - Post-processing cleanup removes zero-amount batches
+     *
+     * @custom:governance-transfers
+     * When governance transfers to regular users:
+     * - Timestamp reset to current time (starts fresh 30-day expiry)
+     * - fromGovernance flag set to false (makes tokens reward-eligible)
+     * - Enables governance to reactivate expired tokens
+     *
+     * @custom:regular-transfers
+     * For all other transfers:
+     * - Original timestamp preserved (expiry cannot be extended)
+     * - fromGovernance flag preserved
+     * - Self-transfers also preserve original timestamp
+     *
+     * @custom:backward-compatibility
+     * If governance has no source batches (edge case):
+     * - Creates synthetic batch with fromGovernance=true
+     * - Prevents transfer revert while maintaining reward exclusion
      */
     function _applyBatchTransfer(address from, address to, uint256 amount) internal {
         if (amount == 0 || from == to) return;
@@ -552,24 +513,20 @@ contract DAV_V3 is
             // decrease source
             src[i].amount = avail - take;
             
-            // Special handling: when governance transfers to regular users, reset timestamp and make eligible for rewards
+            // Governance to user transfer: Reset expiry and enable rewards
             if (from == governance && to != governance) {
-                // Reset timestamp to current time for fresh 2-day expiry countdown
-                // Remove fromGovernance flag to make tokens eligible for rewards
                 dst.push(MintBatch({ 
                     amount: take, 
-                    timestamp: block.timestamp,  // Fresh timestamp starts 2-day countdown
-                    fromGovernance: false        // Make eligible for rewards
+                    timestamp: block.timestamp,  // Fresh 30-day countdown
+                    fromGovernance: false        // Enable rewards
                 }));
             } else {
-                // Preserve original metadata for all other transfers
+                // Preserve original metadata (timestamp cannot be extended)
                 dst.push(MintBatch({ amount: take, timestamp: src[i].timestamp, fromGovernance: src[i].fromGovernance }));
             }
             remaining -= take;
         }
-        // BACKWARD COMPATIBILITY FIX:
-        // Graceful backfill if governance has no source batches (e.g., initial constructor mint)
-        // This prevents transfer revert while maintaining reward exclusion (fromGovernance=true)
+        // Backward compatibility: Handle governance edge case with no source batches
         if (remaining > 0 && from == governance && src.length == 0) {
             dst.push(MintBatch({ amount: remaining, timestamp: block.timestamp, fromGovernance: true }));
             remaining = 0;
@@ -577,45 +534,39 @@ contract DAV_V3 is
         require(remaining == 0, "Batch accounting mismatch");
     }
 
-    // ============= Maintenance: optional batch cleanup =============
-    /// @notice Compacts zero-amount batches for a user to reduce storage/gas in future ops.
-    /// @dev Order of remaining batches is preserved.
-    function cleanupZeroAmountBatches(address user, uint256 maxRemovals) external onlyGovernance returns (uint256 removed) {
-        MintBatch[] storage batches = mintBatches[user];
-        uint256 n = batches.length;
-        if (n == 0) return 0;
-        uint256 w = 0;
-        for (uint256 r = 0; r < n; r++) {
-            if (batches[r].amount == 0 && (maxRemovals == 0 || removed < maxRemovals)) {
-                removed++;
-                continue;
-            }
-            if (w != r) {
-                batches[w] = batches[r];
-            }
-            w++;
-        }
-        while (batches.length > w) {
-            batches.pop();
-        }
-        if (removed > 0) {
-            Distribution.updateDAVHolderStatus(holderState, user, governance, getActiveBalance);
-        }
-    }
-
     function earned(address account) public view returns (uint256) {
         return holderState._earned(account, governance);
     }
-    /// @notice Mints DAV tokens and distributes ETH to stakeholders.
-    /// @param amount Tokens to mint (in wei).
-    /// @param referralCode Optional referrer code for rewards.
+    /// @notice Mints DAV tokens and distributes PLS fees to protocol stakeholders
+    /// @param amount DAV tokens to mint (must be whole numbers in wei, e.g., 1 ether = 1 DAV)
+    /// @param referralCode Optional referral code for 5% bonus to referrer
+    /// @dev Minting process:
+    ///      1. Validates amount (whole numbers only), supply cap, holder cap
+    ///      2. Calculates fee distribution: 80% buyback, 10% holders, 5% dev, 5% referral
+    ///      3. Updates holder status and creates new mint batch with 30-day expiry
+    ///      4. Distributes fees to respective destinations
+    ///      5. Mints DAV tokens to caller
+    ///
+    /// @custom:requirements
+    /// - Contract not paused
+    /// - Amount must be whole DAV tokens (no fractions)
+    /// - Under 2,500 holder cap
+    /// - Caller is not governance
+    /// - Under MAX_SUPPLY cap
+    /// - Exact PLS payment (amount × 1,500,000 PLS)
+    ///
+    /// @custom:distribution
+    /// - 80% → BuyAndBurnController for STATE buyback
+    /// - 10% → Distributed to active DAV holders
+    /// - 5% → Development wallets via AuctionAdmin
+    /// - 5% → Referrer's claimable rewards (if valid code provided)
+    ///
+    /// @custom:security Protected by nonReentrant and whenNotPaused modifiers
     function mintDAV(
         uint256 amount,
         string memory referralCode
     ) external payable nonReentrant whenNotPaused {
-        // Checks
-        //require(canMintDAV, "DAV minting disabled - no dev wallets configured");
-        // Proactively refresh minter holder status to avoid stale holder entries blocking capacity
+        // Validate minting parameters
         Distribution.updateDAVHolderStatus(holderState, msg.sender, governance, getActiveBalance);
         require(amount > 0, "Amount must be greater than zero");
         require(getDAVHoldersCount() < MAX_HOLDERS, "Max holders reached");
@@ -624,7 +575,6 @@ contract DAV_V3 is
         require(mintedSupply + amount <= MAX_SUPPLY, "Max supply reached");
         uint256 cost = (amount * TOKEN_COST) / 1 ether;
         require(msg.value == cost, "Incorrect PLS amount sent");
-        // Update holder  before distributing
 
         // Calculate distribution
         (
@@ -648,9 +598,8 @@ contract DAV_V3 is
                 referralData.referralCodeToUser
             );
 
-        // Effects
+        // Record mint in batch system with 30-day expiry tracking
         mintedSupply += amount;
-        // record mint against current day index aligned to SWAP's GMT+3 17:00 (5 PM) boundary
         uint256 dayIndex = (TimeUtilsLib.calculateNextClaimStartGMTPlus3(block.timestamp) - 1 days) / 1 days;
         mintedByDayIndex[dayIndex] += amount;
         mintBatches[msg.sender].push(
@@ -669,7 +618,7 @@ contract DAV_V3 is
             emit ReferralCodeGenerated(msg.sender, newReferralCode);
         }
 
-        // Burn-to-claim removed: redirect protocol remainder to BuyAndBurnController
+        // Transfer protocol remainder to BuyAndBurnController for STATE buyback
         if (stateLPShare > 0) {
             totalLiquidityAllocated += stateLPShare;
             require(buyAndBurnController != address(0), "BuyAndBurn not set");
@@ -683,24 +632,26 @@ contract DAV_V3 is
             governance,
             getActiveBalance
         );
-        // Distribute holder rewards
+        
+        // Distribute holder rewards proportionally to active DAV holders
         holderState.distributeHolderShare(
             holderShare,
             governance,
             getActiveMintedBalance
         );
-        // Interactions - Referral rewards added to claimable holder rewards
+        
+        // Add referral rewards to referrer's claimable balance (if valid referrer)
+        // Add referral rewards to referrer's claimable balance (EOA wallets only)
         if (referrer != address(0) && referralShare > 0) {
             if (address(referrer).code.length == 0) {
-                // Add referral rewards to referrer's claimable holder rewards (not paid immediately)
-                referralRewards[referrer] += referralShare; // Track lifetime referral earnings for analytics
+                // Referrer is EOA - add to their claimable holder rewards
+                referralRewards[referrer] += referralShare;
                 totalReferralRewardsDistributed += referralShare;
                 
-                // Add to claimable holder rewards instead of immediate payout
                 holderState.holderRewards[referrer] += referralShare;
                 holderState.holderFunds += referralShare;
             } else {
-                // Referrer is a contract – redirect to BuyAndBurnController
+                // Referrer is contract - redirect to BuyAndBurnController
                 totalLiquidityAllocated += referralShare;
                 require(buyAndBurnController != address(0), "BuyAndBurn not set");
                 (bool successLiq, ) = buyAndBurnController.call{value: referralShare}("");
@@ -738,13 +689,6 @@ contract DAV_V3 is
         );
     }
 
-    /// @notice Governance utility to refresh holder status for a list of accounts.
-    /// @dev Helps reclaim holder capacity when many accounts have fully expired balances.
-    function refreshHolderStatuses(address[] calldata accounts) external onlyGovernance {
-        for (uint256 i = 0; i < accounts.length; i++) {
-            Distribution.updateDAVHolderStatus(holderState, accounts[i], governance, getActiveBalance);
-        }
-    }
     //NOTE: This function is used to get the active balance of a user, which includes all minted tokens that have not expired.
     // Below three functions are used in the DApp to show user balances, active tokens, and other related information.
     // It iterates over all mint batches for a user; while gas-intensive, this is necessary for accurate on-chain calculations by design.
@@ -783,6 +727,23 @@ contract DAV_V3 is
         return DAV_TOKEN_EXPIRE;
     }
 
+    /**
+     * @notice Get user's active DAV balance eligible for holder reward distributions
+     * @dev Excludes governance-minted tokens from reward calculations
+     * 
+     * @param account Address to check
+     * @return active Sum of non-expired, non-governance DAV tokens
+     *
+     * @custom:governance-exclusion
+     * - Tokens with fromGovernance=true don't earn holder rewards
+     * - Prevents unfair advantage from promotional/airdrop tokens
+     * - Only user-purchased DAV (fromGovernance=false) earns rewards
+     *
+     * @custom:examples
+     * - User mints 100 DAV with PLS → fromGovernance=false → earns rewards
+     * - Governance airdrops 50 DAV → fromGovernance=true → no rewards
+     * - User receives transfer → fromGovernance=false → earns rewards
+     */
     function getActiveMintedBalance(address account) public view returns (uint256) {
         // Exclude governance from holder distributions
         if (account == governance) return 0;
@@ -864,32 +825,22 @@ contract DAV_V3 is
 
     /**
      * @notice Calculate total active (non-expired) DAV supply across all holders
-     * @dev Iterates all holders and sums their active balances (gas-intensive by design)
-     * 
-     * GAS DESIGN PHILOSOPHY:
-     * =====================
-     * This function intentionally uses loops for REAL-TIME accuracy over gas optimization:
-     * - NO caching or snapshots (avoids staleness)
-     * - NO complex optimizations (maintains clarity)
-     * - MAX_HOLDERS = 5,000 caps iteration size
-     * - Each getActiveBalance() also loops user's batches
-     * - Nested loops acceptable due to:
-     *   * PulseChain's very low gas costs (1 PLS ≈ 0.00000396 ETH)
-     *   * Transparency priority (users see exact real-time values)
-     *   * System size bounded (5,000 holders max)
-     * 
-     * TRADEOFF JUSTIFICATION:
-     * ======================
-     * Chose simplicity + accuracy over gas savings because:
-     * 1. View function - gas not paid by users (query limit only)
-     * 2. PulseChain context - extremely low gas costs
-     * 3. Bounded system - 5,000 holders maximum
-     * 4. Transparency - no cached/stale data to confuse users
-     * 5. Auditability - straightforward logic easier to verify
+     * @dev Iterates all holders and sums their active balances
      * 
      * @return total Sum of all active (non-expired) DAV tokens
-     * @custom:audit Addresses Finding #6 - Intentional gas-intensive design for accuracy
-     * @custom:audit Bounded by MAX_HOLDERS = 5,000, acceptable for PulseChain gas costs
+     *
+     * @custom:loop-bounds
+     * - Bounded by MAX_HOLDERS = 2,500 wallets
+     * - Enforced in mintDAV() and Distribution.updateDAVHolderStatus()
+     * - Each getActiveBalance() loops user's batches (typically 1-10)
+     *
+     * @custom:design-philosophy
+     * Intentional tradeoff: Real-time accuracy over gas optimization
+     * - No caching or snapshots (avoids staleness)
+     * - No complex optimizations (maintains clarity)
+     * - View function (gas not paid by users)
+     * - PulseChain context (extremely low gas costs)
+     * - Transparency priority (exact real-time values)
      */
     function getTotalActiveSupply() public view returns (uint256) {
         /*  Iterate over all DAV holders to calculate the total active supply.This loop is gas-intensive but necessary for accurate, real-time calculation of active token balances. which constrains the array size and keeps gas costs manageable for the expected user base. We avoid complex optimizations like caching or snapshots to maintain clear, straightforward logic, accepting the gas cost as a trade-off for simplicity and transparency. */
@@ -913,54 +864,58 @@ contract DAV_V3 is
     }
 
     /**
-     * @notice Claim accumulated holder rewards (from 10% mint fee distributions + referral bonuses)
-     * @dev Requires ROI check to pass: user's portfolio value must >= total DAV mint cost
-     * @dev Portfolio includes: STATE tokens + auction tokens (at ratio) + unclaimed rewards
+     * @notice Claim accumulated holder rewards (from 10% mint distributions + referral bonuses)
+     * @dev Requires ROI verification: user's portfolio value must >= total DAV mint cost
      * 
-     * SECURITY:
-     * - nonReentrant: Prevents reentrancy attacks
-     * - CEI Pattern: State updates BEFORE external call
-     * - ROI Check: View function (read-only, no state changes)
-     * - All validations complete before transfer
-     * 
-     * ROI VERIFICATION:
-     * 1. Calculates user's STATE holdings (wallet balance)
-     * 2. Adds auction token values (converted to STATE at pool ratio)
-     * 3. Adds claimable rewards (PLS value)
-     * 4. Compares total portfolio value to DAV mint cost
-     * 5. Must meet or exceed cost to claim
-     * 
-     * @custom:security nonReentrant + whenNotPaused + CEI pattern
-     * @custom:audit Addresses Finding #1 - nonReentrant prevents reentrancy, getROI is view-only
-     * @custom:audit Addresses Finding #4 - All low-level calls have explicit success checks
+     * @custom:requirements
+     * - Caller has active (non-expired) DAV balance
+     * - Claimable rewards > 0
+     * - Portfolio value >= DAV mint cost (ROI check)
+     * - Sufficient contract balance
+     * - Contract not paused
+     * - Caller is not governance
+     *
+     * @custom:roi-components
+     * Portfolio includes:
+     * - STATE tokens (wallet balance)
+     * - Auction tokens (converted to STATE at pool ratio)
+     * - Unclaimed rewards (already accumulated PLS)
+     *
+     * @custom:process
+     * 1. Update holder status (check for expired DAV)
+     * 2. Calculate claimable reward amount
+     * 3. Verify ROI threshold (view function - read-only)
+     * 4. Validate sufficient funds
+     * 5. Update state (zero rewards, deduct from holderFunds)
+     * 6. Transfer PLS to user
+     *
+     * @custom:security nonReentrant + whenNotPaused + CEI pattern + explicit success check
      */
     function claimReward() external payable nonReentrant whenNotPaused {
         address user = msg.sender;
         require(user != address(0), "Invalid user");
         require(msg.sender != governance, "Not eligible to claim rewards");
         
-        // STEP 1: Update holder status to check for expiration
+        // Update holder status to check for expiration
         Distribution.updateDAVHolderStatus(holderState, msg.sender, governance, getActiveBalance);
         
-        // STEP 2: Calculate claimable reward
+        // Calculate claimable reward
         uint256 reward = earned(msg.sender);
         require(reward > 0, "No rewards to claim");
         
-        // STEP 3: ROI CHECK (view function - read-only, no state changes)
-        // Audit Note: This is safe - getROI is a view function that only reads state
+        // ROI verification (view function - read-only)
         (, , bool meetsROI, ) = getROI(msg.sender);
         require(meetsROI, "Insufficient ROI: portfolio value must exceed DAV mint cost");
         
-        // STEP 4: Validate sufficient funds
+        // Validate sufficient funds
         require(holderState.holderFunds >= reward, "Insufficient holder funds");
         require(address(this).balance >= reward, "Insufficient contract balance");
         
-        // STEP 5: Update state BEFORE external call (CEI pattern)
+        // Update state before external call (CEI pattern)
         holderState.holderRewards[msg.sender] = 0;
         holderState.holderFunds -= reward;
         
-        // STEP 6: External call LAST
-        // Audit Note: Success check present, nonReentrant prevents reentrancy
+        // Transfer PLS to user with explicit success check
         (bool success, ) = user.call{value: reward}("");
         require(success, "Reward transfer failed");
         
@@ -969,8 +924,23 @@ contract DAV_V3 is
     
     /**
      * @notice Reclaim all unclaimed holder rewards after 1000 days from auction start
-     * @dev Can only be called by governance after 1000 days from when auctions started
-     *      Resets all user claimable rewards to zero and sends total to BuyAndBurnController
+     * @dev Only callable by governance after 1000-day period expires
+     * 
+     * @custom:requirements
+     * - Caller is governance
+     * - Auction schedule initialized in SWAP_V3
+     * - 1000 days passed since auction start
+     * - Unclaimed rewards > 0
+     * - Sufficient contract balance
+     *
+     * @custom:process
+     * 1. Verify auction started and 1000 days elapsed
+     * 2. Get total unclaimed rewards from holderFunds
+     * 3. Reset holderFunds to zero
+     * 4. Reset all individual holder rewards to zero
+     * 5. Transfer total to BuyAndBurnController
+     *
+     * @custom:destination All reclaimed funds sent to BuyAndBurnController for STATE buyback
      */
     function reclaimUnclaimedRewards() external onlyGovernance nonReentrant whenNotPaused {
         require(swapContract != address(0), "SWAP contract not set");
@@ -1035,6 +1005,17 @@ contract DAV_V3 is
     }
     
     /**
+     * @notice Get total lifetime referral rewards earned by a user
+     * @dev This shows the cumulative amount earned from referrals (not current claimable balance)
+     * @dev Actual claimable rewards are in holderState.holderRewards (includes both holder distributions + referrals)
+     * @param user Address of the user to check
+     * @return totalReferralEarnings Total PLS earned from referrals over lifetime
+     */
+    function getReferralRewards(address user) external view returns (uint256 totalReferralEarnings) {
+        return referralRewards[user];
+    }
+    
+    /**
      * @notice View function to check reclaim eligibility and days remaining
      * @return canReclaim Whether governance can reclaim unclaimed rewards now
      * @return daysRemaining Days until reclaim is possible (0 if already eligible)
@@ -1080,36 +1061,29 @@ contract DAV_V3 is
     
     /**
      * @notice Calculate user's Return on Investment (ROI) based on portfolio value vs DAV mint cost
-     * @dev VIEW FUNCTION - Read-only, no state changes, safe to call from other functions
-     * @dev Calculates total value of: STATE tokens + auction tokens (converted to STATE) + claimable holder rewards (includes referral rewards)
-     * @dev Claimable rewards reset to zero after claiming, so ROI is recalculated from token holdings only
+     * @dev View function - read-only, no state changes, safe for external calls
      * 
-     * CALCULATION LOGIC:
-     * ==================
-     * 1. STATE Holdings: User's STATE token balance (from wallet)
-     * 2. Auction Tokens: User's auction token balances converted to STATE at pool ratio
-     * 3. Claimable Rewards: PLS rewards earned from holder distributions + referrals
-     * 4. Total Portfolio: STATE value (in PLS) + claimable rewards (in PLS)
-     * 5. Required Value: Total DAV balance (including expired) * TOKEN_COST
-     * 6. ROI Check: Portfolio value >= required value
-     * 
-     * GAS & LOOP HANDLING:
-     * ===================
-     * - Loops up to 100 iterations but exits early when no more tokens
-     * - Current: 2 tokens, Future max: ~50 tokens
-     * - Try-catch prevents reverts from out-of-bounds or failed calls
-     * - View function so gas not paid by users (query limit only)
-     * - Intentional tradeoff: accuracy over optimization
-     * 
-     * @param user Address of the user to check ROI for
+     * @param user Address to calculate ROI for
      * @return totalValueInPLS Total portfolio value in PLS
-     * @return requiredValue Required value based on DAV balance (DAV * TOKEN_COST)
-     * @return meetsROI Whether user's portfolio value meets or exceeds the required value
-     * @return roiPercentage ROI as a percentage (totalValue * 100 / requiredValue)
-     * @custom:security View function - no state changes, safe for external calls
-     * @custom:audit Addresses Finding #1 - View function cannot enable reentrancy
-     * @custom:audit Addresses Finding #2 - Loop bounded to 100 max, early exit on no tokens
-     * @custom:audit Addresses Finding #5 - Solidity 0.8.20 has built-in overflow protection
+     * @return requiredValue Required value based on DAV balance (DAV × 1,500,000 PLS)
+     * @return meetsROI Whether portfolio value >= required value
+     * @return roiPercentage ROI as percentage (totalValue × 100 / requiredValue)
+     *
+     * @custom:calculation-components
+     * 1. STATE Holdings: User's STATE token wallet balance
+     * 2. Auction Tokens: Converted to STATE value using pool ratios
+     * 3. Claimable Rewards: Accumulated holder distributions + referral bonuses
+     * 4. Total Portfolio: STATE value (in PLS) + claimable rewards
+     * 5. Required Value: Total DAV balance × 1,500,000 PLS
+     * 6. ROI Check: Portfolio value >= required value
+     *
+     * @custom:loop-bounds
+     * - Maximum 50 iterations (current auction tokens)
+     * - Early exit when no more tokens found
+     * - Try-catch prevents reverts from failed calls
+     * - View function - gas not paid by users
+     *
+     * @custom:security View function with automatic Solidity 0.8.20 overflow protection
      */
     function getROI(address user) public view returns (
         uint256 totalValueInPLS,
@@ -1120,15 +1094,12 @@ contract DAV_V3 is
         // STEP 1: Calculate STATE value from user's wallet
         uint256 totalStateValue = StateToken.balanceOf(user);
         
-        // STEP 2: Add auction tokens converted to STATE
-        // Loop through all registered auction tokens
+        // Add auction token values converted to STATE
         if (swapContract != address(0)) {
             ISWAP_V3 swap = ISWAP_V3(swapContract);
             
-            // Audit Note: Loop bounded to 100 max, early exit when no more tokens
-            // Current: 2 tokens, Future: ~50 tokens max
-            // Try-catch handles out-of-bounds gracefully
-            for (uint256 i = 0; i < 100; i++) { // Max 100 tokens (current: 2, future: 50)
+            // Loop through registered auction tokens (max 50, early exit when exhausted)
+            for (uint256 i = 0; i < 50; i++) {
                 try swap.autoRegisteredTokens(i) returns (address auctionToken) {
                     if (auctionToken == address(0)) break;
                     
@@ -1153,24 +1124,22 @@ contract DAV_V3 is
             }
         }
         
-        // STEP 3: Convert total STATE to PLS
+        // Convert total STATE to PLS value
         uint256 stateValueInPLS = _convertStateToPLS(totalStateValue);
         
-        // STEP 4: Add claimable rewards (includes both holder distributions and referral rewards)
+        // Add claimable rewards (holder distributions + referral bonuses)
         uint256 claimableRewards = holderState.holderRewards[user];
         
         totalValueInPLS = stateValueInPLS + claimableRewards;
         
-        // STEP 5: Calculate required value (ALL DAV including expired)
+        // Calculate required value (all DAV including expired)
         uint256 totalDAV = balanceOf(user);
         requiredValue = (totalDAV * TOKEN_COST) / 1e18;
         
-        // STEP 6: Check if meets ROI
+        // Check ROI threshold
         meetsROI = totalValueInPLS >= requiredValue;
         
-        // STEP 7: Calculate ROI percentage
-        // Audit Note: Solidity 0.8.20 has built-in overflow protection
-        // This multiplication is safe and will revert if overflow occurs
+        // Calculate ROI percentage (Solidity 0.8.20 has built-in overflow protection)
         if (requiredValue > 0) {
             roiPercentage = (totalValueInPLS * 100) / requiredValue;
         } else {

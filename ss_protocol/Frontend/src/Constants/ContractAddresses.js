@@ -11,21 +11,23 @@ export const CHAIN_IDS = {
 // Contract addresses organized by chain
 export const CONTRACT_ADDRESSES = {
     [CHAIN_IDS.PULSECHAIN]: {
-        DAV_TOKEN: getAddress('contracts.core.DAV_V3', "0x42107c7441f0A3E1CB3Dba948597c39615765227"),
-        STATE_TOKEN: getAddress('contracts.core.STATE_V3', "0x9454Eb295d8E4d871d724013dffd2301C486FD07"),
-        AUCTION: getAddress('contracts.core.SWAP_V3', "0xeA55dB9Ae0eAfD245720563583871CE9ED549772"),
-        LP_HELPER: getAddress('contracts.utilities.LPHelper', "0x967c15FcB0ED957ab8d406721E12C95BD859c898"),
-        BUY_BURN_CONTROLLER: getAddress('contracts.support.BuyAndBurnController', "0x1bEAfD2cdffCD2867914B3fD6cfe92883ad3A687"),
-        AUCTION_METRICS: getAddress('contracts.support.AuctionMetrics', "0xa309168C3Ea046305cCf453B1b8470319DF70780"),
-        SWAP_LENS: getAddress('contracts.support.SwapLens', "0x04566b9F4852d8b0D3911aB1f2C7d0C0955f6Af0"),
-        AIRDROP_DISTRIBUTOR: getAddress('contracts.stages.AirdropDistributor', "0x2C7725F02235BA3387369560A7Ea16a61778D6ff"),
-        AUCTION_ADMIN: getAddress('contracts.stages.AuctionAdmin', "0x9a64Db2Eb8e6b01a517B1C96F325fa5103a589Ad"),
+        DAV_TOKEN: getAddress('contracts.core.DAV_V3', "0xb8bC708aF8dc74DeFAff6A45708f37E046B1498d"),
+    STATE_TOKEN: getAddress('contracts.core.STATE_V3', "0x72f55666a5CfB5a7C179F9E829402C34bd0708Bd"),
+    AUCTION: getAddress('contracts.core.SWAP_V3', "0x329390c539008885491a09Df6798267e643182A1"),
+        LP_HELPER: getAddress('contracts.utilities.LPHelper', ""), // Deprecated - use SWAP_V3.createPoolOneClick()
+        LIQUIDITY_MANAGER: getAddress('contracts.utilities.LiquidityManager', ""), // TODO: Add deployed address
+    BUY_BURN_CONTROLLER: getAddress('contracts.support.BuyAndBurnController', "0xF6Cd74d4DEdB69bE6824F51d669D5F3483962335"),
+        AUCTION_METRICS: getAddress('contracts.support.AuctionMetrics', ""), // Not deployed in this sequence
+        SWAP_LENS: getAddress('contracts.support.SwapLens', "0x458D1e955374f3a45278B38ac7ae75bCFfc1c444"),
+        AIRDROP_DISTRIBUTOR: getAddress('contracts.stages.AirdropDistributor', "0x0d0F194f1d2652185F42148b584F8381a5c3545F"),
+        AUCTION_ADMIN: getAddress('contracts.stages.AuctionAdmin', "0x3F3350E7Cc9F1309182E3280eF9aBB4d042d6aB4"),
     },
     [CHAIN_IDS.POLYGON]: {
         DAV_TOKEN: "", 
         STATE_TOKEN: "",
         AUCTION: "",
         LP_HELPER: "",
+        LIQUIDITY_MANAGER: "",
         BUY_BURN_CONTROLLER: "",
         AUCTION_METRICS: "",
     },
@@ -34,6 +36,7 @@ export const CONTRACT_ADDRESSES = {
         STATE_TOKEN: "",
         AUCTION: "",
         LP_HELPER: "",
+        LIQUIDITY_MANAGER: "",
         BUY_BURN_CONTROLLER: "",
         AUCTION_METRICS: "",
     },
@@ -80,7 +83,10 @@ export const getContractAddressesForChain = (chainId) => {
         AUCTION: getAUCTIONContractAddress(chainId),
         SWAP_LENS: getContractAddress(chainId, 'SWAP_LENS'),
         LP_HELPER: getContractAddress(chainId, 'LP_HELPER'),
+        LIQUIDITY_MANAGER: getContractAddress(chainId, 'LIQUIDITY_MANAGER'),
         BUY_BURN_CONTROLLER: getContractAddress(chainId, 'BUY_BURN_CONTROLLER'),
         AUCTION_METRICS: getContractAddress(chainId, 'AUCTION_METRICS'),
+        AIRDROP_DISTRIBUTOR: getContractAddress(chainId, 'AIRDROP_DISTRIBUTOR'),
+        AUCTION_ADMIN: getContractAddress(chainId, 'AUCTION_ADMIN'),
     };
 };

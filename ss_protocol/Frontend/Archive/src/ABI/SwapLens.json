@@ -1,0 +1,340 @@
+[
+  {
+    "type": "function",
+    "name": "getDailyStateReleaseBreakdown",
+    "inputs": [
+      {
+        "name": "s",
+        "type": "address",
+        "internalType": "contract ISWAP_V3"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "dayIndex",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "total",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "normal",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "reverse",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getScheduleConfig",
+    "inputs": [
+      {
+        "name": "s",
+        "type": "address",
+        "internalType": "contract ISWAP_V3"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "isSet",
+        "type": "bool",
+        "internalType": "bool"
+      },
+      {
+        "name": "start",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "daysLimit",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "scheduledCount",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getScheduledTokens",
+    "inputs": [
+      {
+        "name": "s",
+        "type": "address",
+        "internalType": "contract ISWAP_V3"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "list",
+        "type": "address[]",
+        "internalType": "address[]"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getScheduledTokensPaginated",
+    "inputs": [
+      {
+        "name": "s",
+        "type": "address",
+        "internalType": "contract ISWAP_V3"
+      },
+      {
+        "name": "start",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "limit",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "list",
+        "type": "address[]",
+        "internalType": "address[]"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getStateReleasedByDay",
+    "inputs": [
+      {
+        "name": "s",
+        "type": "address",
+        "internalType": "contract ISWAP_V3"
+      },
+      {
+        "name": "dayIndex",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "total",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "normal",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "reverse",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getTodayDashboard",
+    "inputs": [
+      {
+        "name": "s",
+        "type": "address",
+        "internalType": "contract ISWAP_V3"
+      },
+      {
+        "name": "user",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "tokenOfDay",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "active",
+        "type": "bool",
+        "internalType": "bool"
+      },
+      {
+        "name": "isReverse",
+        "type": "bool",
+        "internalType": "bool"
+      },
+      {
+        "name": "secondsLeft",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "appearance",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "userHasSwapped",
+        "type": "bool",
+        "internalType": "bool"
+      },
+      {
+        "name": "userHasReverseSwapped",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getTodayStatus",
+    "inputs": [
+      {
+        "name": "s",
+        "type": "address",
+        "internalType": "contract ISWAP_V3"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "ts",
+        "type": "tuple",
+        "internalType": "struct SwapLens.TodayStatus",
+        "components": [
+          {
+            "name": "tokenOfDay",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "activeWindow",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "isReverse",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "appearanceCount",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "secondsLeft",
+            "type": "uint256",
+            "internalType": "uint256"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getTokenScheduleInfo",
+    "inputs": [
+      {
+        "name": "s",
+        "type": "address",
+        "internalType": "contract ISWAP_V3"
+      },
+      {
+        "name": "token",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "isScheduled",
+        "type": "bool",
+        "internalType": "bool"
+      },
+      {
+        "name": "index",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "appearancesToDate",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "isReverseToday",
+        "type": "bool",
+        "internalType": "bool"
+      },
+      {
+        "name": "currentDay",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getUserSwapStatus",
+    "inputs": [
+      {
+        "name": "s",
+        "type": "address",
+        "internalType": "contract ISWAP_V3"
+      },
+      {
+        "name": "user",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "inputToken",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "hasSwapped",
+        "type": "bool",
+        "internalType": "bool"
+      },
+      {
+        "name": "hasReverseSwapped",
+        "type": "bool",
+        "internalType": "bool"
+      },
+      {
+        "name": "cycle",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "error",
+    "name": "InvalidContract",
+    "inputs": []
+  }
+]

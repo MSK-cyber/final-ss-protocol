@@ -1,8 +1,25 @@
 .auction-boxes {
-  margin-top: 0.4rem; /* slightly smaller spacing */
-  margin-bottom: 0.6rem; /* slightly smaller spacing */
+  /* Align spacing with Dav Mint cards: rely on Bootstrap container/row/col margins */
+  /* Slightly increase top gap so boxes are not too close to the hero/nav */
+  margin-top: 0.875rem; /* was 0.75rem (~12px); nudge +2px to slightly increase spacing */
+  margin-bottom: 0.6rem; /* keep a small bottom breathing space */
   color: #ffffff;
-  /* Use Bootstrap container defaults for width and horizontal alignment */
+  width: 100%;
+  max-width: 100vw;
+  display: flex;
+  justify-content: flex-start !important; /* align to left like Dav Mint */
+  align-items: flex-start !important;     /* align to top */
+  margin-left: 0 !important;
+  margin-right: auto !important;
+  /* Removed padding-left and padding-right */
+  overflow-x: hidden; /* ensure no horizontal scrollbar on page */
+}
+
+/* Neutralize Bootstrap row's negative margins inside auction container */
+.auction-boxes .row {
+  --bs-gutter-x: 0;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
 }
 
 .auction-frame {
@@ -10,12 +27,19 @@
   border-radius: 10px; /* match above boxes */
   padding: 8px 10px; /* slightly smaller */
   background: #212529; /* match card bg */
+  width: 100%; /* ensure frame fills the column width */
+  box-sizing: border-box; /* include border/padding in computed width */
+  font-family: 'Satoshi', sans-serif; /* match Dav Mint font */
 }
 
+
 .auction-frame.reverse {
-  border-color: rgba(255, 64, 129, 0.3); /* subtle accent only */
+  /* Use the same border styling as normal (remove pink accent) */
+  border-color: #ffffff26;
   background: #212529; /* keep consistent card bg */
   border-radius: 10px; /* keep same rounding in reverse */
+  width: 100%; /* ensure reverse frame uses full column width like normal */
+  box-sizing: border-box;
 }
 
 /* normal mode keeps base theme */
@@ -24,14 +48,34 @@
   background: transparent; /* align with standard card sections */
   border: none;
   border-radius: 18px;
-  padding: 10px 12px; /* slightly smaller */
+  padding: 0; /* no internal padding so left spacing matches Dav Mint cards */
+}
+
+/* Ensure scaled content isn't clipped by column wrapper */
+.auction-col, .auction-col.reverse-narrow {
+  overflow: visible;
+  width: 100%;
+  transform: none; /* avoid shifting that causes overflow */
+  margin-left: 0 !important;
+  margin-right: auto !important;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start; /* left align content */
+}
+
+/* Make reverse auction box narrower by 50% while keeping same centering */
+.auction-col.reverse-narrow {
+  width: 100%;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 .auction-header {
-  font-size: 14px; /* slightly smaller */
-  font-weight: 600;
+  /* Match Ratio Swap label size and remove bold */
+  font-size: 12px;
+  font-weight: 400;
   margin-bottom: 6px;
-  margin-left: 2px;
+  margin-left: 0; /* align with button band */
 }
 
 .auction-row {
@@ -44,14 +88,16 @@
   border-radius: 10px;
   background-color: #212529; /* match input/card background */
   padding: 6px 8px; /* smaller */
-  min-height: 48px; /* slightly smaller height */
+  height: 53px; /* fixed height (+10%) */
   position: relative; /* for legend positioning */
+  /* Allow the floating .row-legend to sit above the border */
+  overflow: visible;
 }
 
 /* smaller variant specifically for compact rows */
 .auction-row.small {
   padding: 5px 8px;
-  min-height: 40px;
+  height: 44px; /* fixed height (+10%) */
 }
 
 .auction-card {
@@ -62,40 +108,57 @@
   border-radius: 10px;
   width: 100%;
   grid-column: 1 / 2;
+  display: flex;            /* keep content vertically centered */
+  align-items: center;      /* center text in fixed-height rows */
+  height: 100%;
 }
 
 .auction-card-title {
   font-size: 19px; /* slightly smaller */
   font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Floating legend label inside box boundary */
 .row-legend {
   position: absolute;
-  top: -9px; /* adjust for reduced padding */
-  left: 9px; /* adjust for reduced padding */
+  top: -10px; /* slight nudge for fixed-height rows */
+  left: 10px; /* slight nudge */
   background-color: #212529; /* same as box background */
   padding: 0 5px;
   font-size: 12px; /* align closer to small */
   font-weight: 700;
   color: rgba(255, 255, 255, 0.6); /* closer to detailText opacity */
-  text-transform: uppercase;
+  /* Use natural casing to match dynamic text content */
+  text-transform: none;
   border-radius: 6px;
 }
 
 .auction-card-sub {
-  /* Match Mint card text style */
-  font-size: small;
-  text-transform: uppercase;
+  /* Match Mint button text size (~.btn-sm => 0.875rem) */
+  font-size: 0.875rem;
+  /* Use natural casing so copy matches what's shown */
+  text-transform: none;
   font-weight: 700;
   opacity: 0.5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Increase specificity to override global .detailText if applied */
+.auction-card-sub.detailText {
+  font-size: 0.875rem;
+  text-transform: none;
 }
 
 .auction-pill {
   /* Use Bootstrap/InfoCards .btn-primary for colors */
   border: none;
   border-radius: 10px; /* match above boxes */
-  padding: 5px 12px; /* slightly smaller */
+  padding: 6px 14px; /* slightly larger to fit fixed rows */
   font-weight: 600;
   /* Keep text on a single line and center it */
   display: inline-flex;
@@ -114,8 +177,10 @@
 }
 
 .auction-footer {
-  margin-top: 2px; /* tighter spacing */
+  margin-top: 4px; /* ensure space for footer content */
   gap: 6px;
+  padding-bottom: 8px; /* internal spacing for icons/text */
+  min-height: 52px; /* ensure enough height for two-line footer */
 }
 
 /* Container that holds a bordered box plus an external action button */
@@ -126,11 +191,25 @@
   margin: 6px 0;
 }
 
+/* Tighter spacing inside the fixed-height normal card */
+.auction-frame.normal-fixed .auction-row-stack {
+  margin: 8px 0; /* slightly more spacing between buttons */
+  gap: 8px;
+}
+
 .auction-row-action {
   display: flex;
   justify-content: center;
+  align-items: center;
+  min-height: 44px; /* keep action area consistent */
 }
 
+/* Inside fixed-height normal card, let buttons control height exactly */
+.auction-frame.normal-fixed .auction-row-action {
+  min-height: 0;
+}
+
+/* Inline layout: box + button in one row */
 /* Inline layout: box + button in one row */
 .auction-row-inline {
   display: grid;
@@ -158,6 +237,11 @@
   min-width: 0; /* allow content to shrink */
 }
 
+/* Allow widened frame to render beyond the normal column width while staying centered */
+.auction-col {
+  overflow: visible;
+}
+
 /* Wider auction column on md+ screens */
 @media (min-width: 768px) {
   .auction-row {
@@ -168,4 +252,135 @@
     margin: 6px 0;
   }
 
+}
+
+/* =============================
+   Normal Auction fixed layout
+   ============================= */
+/* Fix the overall Normal Auction card size to match Dav Mint box exactly */
+.auction-frame.normal-fixed {
+  /* Match exact Dav Mint card dimensions with fixed size to prevent dynamic resizing */
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start !important; /* force content to stack from top; don't push footer to bottom */
+  box-sizing: border-box;
+  overflow: visible; /* allow footer content to be fully visible */
+  width: 420px !important;          /* slightly reduced fixed width */
+  min-width: 420px !important;
+  max-width: 420px !important;
+  margin-left: 0;                   /* align to left */
+  margin-right: auto;
+  padding-top: 6px;                 /* tighter padding to avoid clipping */
+  padding-bottom: 36px !important;  /* increase bottom padding so footer sits noticeably higher */
+  gap: 2px;                         /* tighter gap to fit content */
+  height: 260px !important;         /* match Dav Mint box height exactly */
+  min-height: 260px;
+  max-height: 260px;
+}
+
+/* Ensure reverse card shares identical fixed dimensions */
+.auction-frame.reverse.normal-fixed {
+  width: 420px !important;
+  min-width: 420px !important;
+  max-width: 420px !important;
+  height: 260px !important;
+  min-height: 260px;
+  max-height: 260px;
+}
+
+/* Two-line pill button with title + dynamic subtitle inside the button */
+.auction-step-btn {
+  /* Make buttons slightly narrower (about 14% reduction) */
+  width: 85%;
+  height: 44px;             /* slightly smaller to make room for added spacing */
+  border-radius: 9999px !important; /* pill/round edges like Dav Mint button */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  line-height: 1.1;
+  gap: 1px;
+  padding: 0 16px;          /* breathing room for long text */
+  white-space: nowrap;       /* prevent multi-line growth */
+  overflow: hidden;          /* keep size fixed */
+  text-overflow: ellipsis;   /* truncate if too long */
+}
+
+.auction-step-title {
+  font-size: 18px;           /* larger title to match mockup */
+  font-weight: 700;
+  font-family: 'Satoshi', sans-serif; /* match Dav Mint font */
+  letter-spacing: 0.2px; /* subtle tracking similar to Dav labels */
+  text-transform: none; /* ensure no all-caps on button title */
+}
+
+.auction-step-sub {
+  font-size: 10px;           /* smaller subtitle to match mockup */
+  opacity: 1;                /* same as main text */
+  color: #ffffff;            /* match main text color */
+  font-weight: 700;          /* match Dav Mint weight */
+  font-family: 'Satoshi', sans-serif; /* match Dav Mint font */
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-transform: none; /* ensure subtitle respects casing */
+}
+
+/* If detailText class is present, keep the brighter style */
+.auction-step-sub.detailText {
+  opacity: 1;
+  color: #ffffff;
+}
+
+/* Strong override to prevent any inherited uppercase on the entire step button */
+.auction-step-btn,
+.auction-step-btn * {
+  text-transform: none !important;
+}
+
+/* On desktop, constrain header/footer/buttons to the same centered band width (~85% of card) */
+@media (min-width: 768px) {
+  .auction-frame .auction-header,
+  .auction-frame .auction-footer,
+  .auction-frame .auction-row-action .auction-step-btn {
+    width: 82%;
+    margin-left: auto;
+    margin-right: auto;
+  }
+}
+
+/* Keep buttons full-width on small screens for usability */
+@media (max-width: 767px) {
+  .auction-frame .auction-row-action .auction-step-btn {
+    width: 100%;
+  }
+}
+
+/* Prevent header labels from being uppercased */
+.auction-header,
+.auction-header * {
+  text-transform: none;
+}
+
+/* Accent label style to mirror Dav Mint detail styling, with brand color */
+.accent-label {
+  /* Keep same size as header and remove bold; retain brand color */
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0.2px;
+  color: #ff4081;
+  font-family: 'Satoshi', sans-serif;
+}
+
+/* Footer labels: make token name (left) and STATE (right) same size as Ratio Swap and remove bold */
+.auction-footer .footer-left,
+.auction-footer .footer-right {
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.2;
+}
+/* Ensure nested div inherits the typography for the left token label */
+.auction-footer .footer-left > div {
+  font-size: inherit;
+  font-weight: inherit;
 }

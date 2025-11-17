@@ -1,0 +1,123 @@
+/* DEX Modal polished styles */
+.dex-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2050;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dex-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(6px);
+}
+
+.dex-modal {
+  position: relative;
+  /* Reduce outer container by ~25% without scaling inner content */
+  width: 69vw; /* was 92vw */
+  max-width: 585px; /* was 780px */
+  max-height: 88vh; /* restore to avoid unnecessary scrollbar */
+  overflow: auto;
+  background: linear-gradient(180deg, #121212 0%, #0d0d0f 100%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+  color: #eaeaea;
+  padding: 10px 10px 6px 10px; /* slightly smaller outer box without changing inner card */
+}
+
+.dex-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  /* Match body left padding so subtitle/title align with main content */
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.dex-header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.dex-token-logo {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+}
+
+.dex-title-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start; /* ensure subtitle starts exactly under title text */
+}
+
+.dex-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.dex-subtitle {
+  margin: 0;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.65);
+  padding-left: 0; /* no indent */
+}
+
+.dex-close {
+  appearance: none;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.04));
+  color: #fff;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background .15s ease, border-color .15s ease, transform .08s ease;
+}
+
+.dex-close .bi { font-size: 16px; }
+
+.dex-close:hover {
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.24);
+}
+
+.dex-close:active { transform: scale(0.96); }
+
+.dex-close:focus-visible {
+  outline: 2px solid rgba(131, 110, 255, 0.6);
+  outline-offset: 2px;
+}
+
+.dex-body {
+  padding: 14px 10px 10px 10px;
+}
+
+@media (max-width: 576px) {
+  .dex-modal {
+    /* Keep mobile usability high; do not shrink as aggressively on small screens */
+    width: 94vw; /* slight reduction only on mobile */
+    max-width: 94vw;
+    height: auto;
+    max-height: 88vh;
+    border-radius: 14px;
+  }
+  .dex-header {
+    padding: 6px 4px;
+  }
+  .dex-title {
+    font-size: 15px;
+  }
+}

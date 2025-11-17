@@ -7,7 +7,7 @@ import {SWAP_V3} from "../src/AuctionSwap.sol";
 
 contract Deploy01_SWAP_V3 is Script {
     // PulseChain Mainnet addresses
-    address constant GOV_ADDRESS = 0xBAaB2913ec979d9d21785063a0e4141e5B787D28;
+    address constant GOV_ADDRESS = 0x9FA004E13e780EF5b50ca225ad5DCD4D0Fe9ed70;
 
     function run() external {
         console.log("=== DEPLOYING SWAP_V3 CONTRACT ===");
@@ -23,11 +23,8 @@ contract Deploy01_SWAP_V3 is Script {
         SWAP_V3 swapV3 = new SWAP_V3(GOV_ADDRESS);
         
         console.log("SUCCESS: SWAP_V3 deployed at:", address(swapV3));
+        console.log("NOTE: Ownership renounced in constructor - governance address has direct admin rights");
         console.log("");
-        
-        // Transfer ownership to governance
-        swapV3.transferOwnership(GOV_ADDRESS);
-        console.log("Ownership transferred to governance");
         
         vm.stopBroadcast();
         
@@ -35,7 +32,7 @@ contract Deploy01_SWAP_V3 is Script {
         console.log("SWAP_V3 Address:", address(swapV3));
         console.log("");
         console.log("NEXT STEP: Deploy STATE_V3 using this address:");
-        console.log("forge script temp_scripts/Deploy02_STATE_V3.s.sol:Deploy02_STATE_V3");
+        console.log("forge script scripts/Deploy02_STATE_V3.s.sol:Deploy02_STATE_V3");
         console.log("  --rpc-url https://rpc.pulsechain.com");
         console.log("  --private-key $PRIVATE_KEY");
         console.log("  --broadcast");

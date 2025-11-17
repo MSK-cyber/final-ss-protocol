@@ -2,8 +2,8 @@
 pragma solidity ^0.8.20;
 
 interface IAuctionAdmin {
-    function pause(address swapContract) external;
-    function unpause(address swapContract) external;
+    function pause() external;
+    function unpause() external;
     function setMaxAuctionParticipants(address swapContract, uint256 newMax) external;
     function setDexAddresses(address swapContract, address _router, address _factory) external;
     function deployTokenOneClick(address swapContract, string memory name, string memory symbol) external returns (address tokenAddress);

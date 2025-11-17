@@ -7,8 +7,8 @@ import {STATE_V3} from "../src/StateToken.sol";
 
 contract Deploy02_STATE_V3 is Script {
     // Update this address after SWAP_V3 deployment
-    address constant SWAP_V3_ADDRESS = 0x1062D1bBD322781Be2a701698e8DD62E4D3aBCd4; // SWAP_V3 from Deploy01
-    address constant GOV_ADDRESS = 0xBAaB2913ec979d9d21785063a0e4141e5B787D28;
+    address constant SWAP_V3_ADDRESS = 0x329390c539008885491a09Df6798267e643182A1; // SWAP_V3 from Deploy01
+    address constant GOV_ADDRESS = 0x9FA004E13e780EF5b50ca225ad5DCD4D0Fe9ed70;
 
     function run() external {
         require(SWAP_V3_ADDRESS != address(0), "Must update SWAP_V3_ADDRESS first");
@@ -24,7 +24,7 @@ contract Deploy02_STATE_V3 is Script {
         
         console.log("Deploying STATE_V3...");
         // Mint 100% of supply to SWAP contract in single transaction
-        STATE_V3 stateV3 = new STATE_V3("PulseState", "pSTATE", SWAP_V3_ADDRESS);
+        STATE_V3 stateV3 = new STATE_V3("PulseState", "pSTATE1", SWAP_V3_ADDRESS);
         
         console.log("SUCCESS: STATE_V3 deployed at:", address(stateV3));
         console.log("NOTE: Ownership automatically renounced in constructor");
@@ -37,12 +37,12 @@ contract Deploy02_STATE_V3 is Script {
         console.log("");
         console.log("Token Details:");
         console.log("- Name: PulseState");
-        console.log("- Symbol: pSTATE");
+        console.log("- Symbol: pSTATE1");
         console.log("- Total Supply: 100 trillion tokens");
         console.log("- 100% (100 trillion tokens) minted to SWAP contract");
         console.log("");
         console.log("NEXT STEP: Deploy AuctionAdmin using this address:");
-        console.log("forge script temp_scripts/Deploy03_AuctionAdmin.s.sol:Deploy03_AuctionAdmin");
+        console.log("forge script scripts/Deploy03_AuctionAdmin.s.sol:Deploy03_AuctionAdmin");
         console.log("  --rpc-url https://rpc.pulsechain.com");
         console.log("  --private-key $PRIVATE_KEY");
         console.log("  --broadcast");

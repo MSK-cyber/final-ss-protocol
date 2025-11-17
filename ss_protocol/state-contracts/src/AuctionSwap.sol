@@ -58,30 +58,16 @@ interface IAirdropDistributor {
 
 /**
  * @title SWAP_V3 - State Protocol Auction System
+ * @author State Protocol Team
  * @notice Main contract implementing normal and reverse auctions for token distribution
- * @dev This contract manages a sophisticated auction system with the following key features:
- *      - Normal auctions: Users claim tokens via DAV, burn tokens for STATE, swap STATE for tokens
- *      - Reverse auctions: Users can swap earned tokens back to STATE
- *      - Registration cap system with maximum participant limit
- *      - Daily analytics tracking with GMT+3 17:00 (5 PM) timezone boundaries
- *      - Integration with PulseX DEX for liquidity and price discovery
- * 
- * AUDIT NOTES:
- * - Uses Solidity 0.8.20 with built-in overflow/underflow protection (no SafeMath needed)
- * - All external functions protected with ReentrancyGuard
- * - Access control via onlyGovernance modifier and admin delegation pattern
- * - Array bounds: autoRegisteredTokens limited to scheduleSize (50 tokens max)
- * - Initialization: System uses atomic initialization via initializeCompleteSystem()
- * - CEI Pattern: Follows Checks-Effects-Interactions where external calls are necessary
- * 
- * AUCTION STRUCTURE:
- * - 50 tokens rotate in a daily schedule (1 token per day)
- * - Each token runs for 20 cycles (20 separate auctions)
- * - Each auction lasts 24 hours (1 day)
- * - Total auction period: 50 tokens × 20 cycles = 1000 days
- * - After 1000 days, the entire cycle repeats (50-day rotation, 20 times)
+ * @dev Manages auction system with normal/reverse auctions, DAV-based token claims, and PulseX integration
+ * @custom:security Uses Solidity 0.8.20 built-in overflow protection, ReentrancyGuard on external functions
+ * @custom:access Governance-controlled with admin delegation pattern
+ * @custom:schedule 50 auction tokens rotating daily, 20 cycles per token, 1000-day total period
+ * @custom:participants Maximum 2500 unique participants across all auctions
+ * @custom:timezone All daily boundaries calculated at GMT+3 17:00 (5 PM)
  */
-contract SWAP_V3 is Ownable(msg.sender), ReentrancyGuard, SwapErrors, SwapEvents {
+contract SWAP_V3 is Ownable, ReentrancyGuard, SwapErrors, SwapEvents {
     using SafeERC20 for IERC20;
     using TimeUtilsLib for uint256;
     using AuctionLib for AuctionLib.AuctionCycle;
@@ -98,7 +84,6 @@ contract SWAP_V3 is Ownable(msg.sender), ReentrancyGuard, SwapErrors, SwapEvents
     // Constants
     uint256 constant MIN_DAV_REQUIRED = 1 ether;
     address private constant BURN_ADDRESS = 0x000000000000000000000000000000000000dEaD;
-    uint256 public constant GOVERNANCE_UPDATE_DELAY = 7 days;
     uint256 constant MAX_CYCLES_PER_TOKEN = 20; // Each token can run for maximum 20 cycles (20 days per token)
     
     // Core addresses
@@ -107,15 +92,15 @@ contract SWAP_V3 is Ownable(msg.sender), ReentrancyGuard, SwapErrors, SwapEvents
     address public governanceAddress;
     address public airdropDistributor;
     IAuctionAdmin public auctionAdmin;
-    address public pendingGovernance;
+    address public buyAndBurnController;
+    address public swapLens;
     address public pulseXRouter;
     address public pulseXFactory;
     
     // State variables
     uint256 public TotalBurnedStates;
-    uint256 public governanceUpdateTimestamp;
     bool public paused = false;
-    uint256 public maxAuctionParticipants = 5000;
+    uint256 public maxAuctionParticipants = 2500;
     
     // Daily tracking
     uint256 public currentDayStart;
@@ -194,16 +179,23 @@ contract SWAP_V3 is Ownable(msg.sender), ReentrancyGuard, SwapErrors, SwapEvents
 
     // ================= Constructor =================
     
-    constructor(address _gov) {
+    constructor(address _gov) Ownable(msg.sender) {
         governanceAddress = _gov;
         currentDayStart = _calcCurrentDayStart(block.timestamp);
         auctionSchedule.scheduleSize = 50; // 50 tokens rotating daily
         // Each token gets 20 cycles: 50 tokens × 20 cycles = 1000 total auction days (1000-day cycle)
         auctionSchedule.auctionDaysLimit = auctionSchedule.scheduleSize * 20; // 50 × 20 = 1000 days
+        renounceOwnership();
     }
 
     // ================= Core Auction Functions (Simplified) =================
     
+    /**
+     * @notice Normal Auction Step 3 - Swap STATE tokens for auction tokens via PulseX pool
+     * @dev Users can call multiple times per cycle if they acquire more DAV and burn more tokens
+     * @custom:balance userStateBalance tracks accumulated STATE from burns, deducts on each swap
+     * @custom:tracking STATE release counted in burnTokensForState (Step 2), not here
+     */
     function swapTokens() external nonReentrant whenNotPaused {
         _rollDailyIfNeeded();
         
@@ -268,6 +260,14 @@ contract SWAP_V3 is Ownable(msg.sender), ReentrancyGuard, SwapErrors, SwapEvents
         emit TokensSwapped(user, stateToken, inputToken, userStateFromBurn, amountOut);
     }
 
+    /**
+     * @notice Normal Auction Step 2 - Burn auction tokens to receive STATE tokens
+     * @dev User must have completed Step 1 (claim airdrop via DAV). Multiple burns allowed per cycle.
+     * @custom:burn User burns 30% of airdrop tokens (e.g., 3000 from 10K airdrop per 1 DAV)
+     * @custom:reward Receives 2x STATE tokens based on pool ratio
+     * @custom:fee 0.5% auction fee deducted from STATE output
+     * @custom:requirement Minimum 1 DAV balance, Step 1 completed, sufficient auction token balance
+     */
     function burnTokensForState() external nonReentrant whenNotPaused {
         _rollDailyIfNeeded();
         
@@ -345,6 +345,13 @@ contract SWAP_V3 is Ownable(msg.sender), ReentrancyGuard, SwapErrors, SwapEvents
         emit TokensSwapped(msg.sender, auctionToken, stateToken, tokensToBurn, stateToGive);
     }
 
+    /**
+     * @notice Reverse Auction Step 1 - Swap auction tokens for STATE tokens
+     * @param tokenAmount Amount of auction tokens to swap (auto-adjusted to maximum if exceeds limit)
+     * @dev Only tokens earned from previous 3 normal auction cycles can be swapped
+     * @custom:requirement Minimum 1 DAV balance, participated in previous normal auctions
+     * @custom:lookback Calculates net tokens from previous 3 cycles as maximum swap limit
+     */
     function reverseSwapTokensForState(uint256 tokenAmount) external nonReentrant whenNotPaused {
         _rollDailyIfNeeded();
         
@@ -415,6 +422,15 @@ contract SWAP_V3 is Ownable(msg.sender), ReentrancyGuard, SwapErrors, SwapEvents
         emit TokensSwapped(msg.sender, auctionToken, stateToken, tokenAmount, stateOutput);
     }
 
+    /**
+     * @notice Reverse Auction Step 2 - Burn STATE tokens to receive auction tokens
+     * @param stateToBurn Amount of STATE to burn (parameter ignored, uses exact balance from Step 1)
+     * @dev User must burn exact STATE amount received in Step 1, cannot choose custom amount
+     * @custom:burn User burns STATE from Step 1 to receive auction tokens
+     * @custom:reward Receives auction tokens based on pool ratio (inverse of normal auction)
+     * @custom:fee 0.5% auction fee deducted from token output
+     * @custom:requirement Step 1 completed, sufficient STATE balance to burn
+     */
     function burnStateForTokens(uint256 stateToBurn) external nonReentrant whenNotPaused {
         _rollDailyIfNeeded();
         
@@ -438,6 +454,7 @@ contract SWAP_V3 is Ownable(msg.sender), ReentrancyGuard, SwapErrors, SwapEvents
         stateToBurn = reverseStateBalance[msg.sender][auctionToken][currentCycle];
         if (stateToBurn == 0) revert AmountZero();
         
+        // User must hold sufficient STATE balance to complete burn
         uint256 userCurrentStateBalance = IERC20(stateToken).balanceOf(msg.sender);
         if (userCurrentStateBalance < stateToBurn) revert InsufficientBalance();
         
@@ -479,6 +496,12 @@ contract SWAP_V3 is Ownable(msg.sender), ReentrancyGuard, SwapErrors, SwapEvents
 
     // ================= Internal Functions =================
     
+    /**
+     * @notice Validate swap eligibility and requirements
+     * @param user User address performing swap
+     * @param inputToken Token being swapped
+     * @dev Checks DAV balance, auction status, schedule, and participant cap
+     */
     function _validateSwap(address user, address inputToken) internal view {
         if (msg.sender != user) revert Unauthorized();
         if (user == address(0)) revert ZeroAddr();
@@ -496,6 +519,12 @@ contract SWAP_V3 is Ownable(msg.sender), ReentrancyGuard, SwapErrors, SwapEvents
         }
     }
 
+    /**
+     * @notice Check if user completed Step 1 (airdrop claim) for current cycle
+     * @param user User address
+     * @param token Auction token address
+     * @return true if user has consumed DAV units for current cycle
+     */
     function _hasCompletedStep1(address user, address token) internal view returns (bool) {
         if (airdropDistributor == address(0)) return false;
         // Check if user has consumed DAV for current cycle of this token
@@ -508,16 +537,20 @@ contract SWAP_V3 is Ownable(msg.sender), ReentrancyGuard, SwapErrors, SwapEvents
      * @notice Get user's active DAV balance
      * @param user User address to check
      * @return User's active DAV balance
-     * @dev AUDIT NOTE: The code.length check is defensive programming. The DAV contract is set via
-     *      initializeCompleteSystem() with proper zero-address validation, so this check provides
-     *      additional safety against misconfiguration. Not exploitable as DAV address is immutable
-     *      after initialization and controlled by governance.
+     * @dev Validates DAV contract is initialized before querying balance
      */
     function getDavBalance(address user) internal view returns (uint256) {
         if (address(dav).code.length == 0) revert InvalidParam();
         return dav.getActiveBalance(user);
     }
 
+    /**
+     * @notice Set exact token allowance for spender
+     * @param token Token to approve
+     * @param spender Address receiving allowance
+     * @param amount Exact allowance amount to set
+     * @dev Safely adjusts allowance up or down to reach exact target amount
+     */
     function _setExactAllowance(address token, address spender, uint256 amount) internal {
         uint256 current = IERC20(token).allowance(address(this), spender);
         if (current == amount) return;
@@ -530,6 +563,10 @@ contract SWAP_V3 is Ownable(msg.sender), ReentrancyGuard, SwapErrors, SwapEvents
         }
     }
 
+    /**
+     * @notice Roll over daily tracking if 24 hours passed since last roll
+     * @dev Saves current day metrics and resets counters at GMT+3 17:00 boundary
+     */
     function _rollDailyIfNeeded() internal {
         if (block.timestamp >= currentDayStart + 1 days) {
             uint256 dayIndex = currentDayStart / 1 days;
@@ -548,6 +585,11 @@ contract SWAP_V3 is Ownable(msg.sender), ReentrancyGuard, SwapErrors, SwapEvents
         }
     }
 
+    /**
+     * @notice Calculate current day start timestamp
+     * @param ts Reference timestamp
+     * @return Day start timestamp aligned to GMT+3 17:00 boundary
+     */
     function _calcCurrentDayStart(uint256 ts) internal pure returns (uint256) {
         uint256 next = TimeUtilsLib.calculateNextClaimStartGMTPlus3(ts);
         return next - 1 days;
@@ -556,14 +598,7 @@ contract SWAP_V3 is Ownable(msg.sender), ReentrancyGuard, SwapErrors, SwapEvents
     /**
      * @notice Auto-register user for auction participation
      * @param user User address to register
-     * @dev AUDIT NOTE - Front-running Consideration:
-     *      Yes, users can be front-run when approaching the participant cap. This is an intentional
-     *      design choice for a first-come-first-served system. The alternative (reservation system,
-     *      whitelisting, lottery) would add significant complexity and gas costs.
-     *      
-     *      Current cap is 5000, expandable to higher limits. Front-running near capacity is an
-     *      acceptable edge case that affects a small number of users. Clean revert behavior ensures
-     *      no funds are lost - users simply need to wait for next auction cycle or cap increase.
+     * @dev First-come-first-served registration up to maxAuctionParticipants limit (2500)
      */
     function _autoRegisterUser(address user) internal {
         if (!isRegisteredForAuctions[user]) {
@@ -579,6 +614,7 @@ contract SWAP_V3 is Ownable(msg.sender), ReentrancyGuard, SwapErrors, SwapEvents
     /**
      * @notice Public function to register user for auctions (called by AirdropDistributor)
      * @param user Address to register
+     * @dev Only callable by AirdropDistributor contract or internal delegation
      */
     function registerUserForAuctions(address user) external {
         // Only allow specific contracts to register users
@@ -678,12 +714,7 @@ contract SWAP_V3 is Ownable(msg.sender), ReentrancyGuard, SwapErrors, SwapEvents
      * @param user User address
      * @param auctionToken Token being auctioned
      * @return Available DAV amount (total - used)
-     * @dev AUDIT NOTE - Overflow/Underflow Protection:
-     *      Solidity 0.8.20 has BUILT-IN overflow/underflow protection. All arithmetic operations
-     *      automatically revert on overflow/underflow. No SafeMath library needed.
-     *      
-     *      This function uses ternary operator for additional safety, but even direct subtraction
-     *      would be safe due to compiler protections.
+     * @dev Calculates remaining DAV balance after accounting for usage in current cycle
      */
     function getAvailableDavForAuction(address user, address auctionToken) external view returns (uint256) {
         uint256 totalDav = getDavBalance(user);
@@ -706,18 +737,20 @@ contract SWAP_V3 is Ownable(msg.sender), ReentrancyGuard, SwapErrors, SwapEvents
      * @param token Token address
      * @param cycle Auction cycle number
      * @return netTokens Net tokens = airdrop + swapOutput - burned
+     * @dev DAV tokens are always whole units (1, 2, 3 DAV), matching AirdropDistributor logic
+     * @custom:formula netTokens = (davUsed/1e18 * 10000) + swapOutput - tokensBurned
      */
     function calculateNetTokensFromNormalAuction(
         address user,
         address token,
         uint256 cycle
     ) public view returns (uint256 netTokens) {
-        // Get DAV used in Step 2 (full precision, e.g., 5.3 DAV = 5.3e18)
+        // Get DAV used in Step 2 (always whole units: 1 DAV, 2 DAV, etc.)
         uint256 davUsed = davTokensUsed[user][token][cycle];
         
-        // Calculate airdrop from Step 1 (based on whole DAV units)
-        // AirdropDistributor uses: davUnits = activeDav / 1e18 (whole units only)
-        uint256 davWholeUnits = davUsed / 1e18;
+        // Calculate airdrop from Step 1 (whole DAV units)
+        // No precision loss: DAV tokens are minted in whole units only
+        uint256 davWholeUnits = davUsed / 1e18; // Always exact whole number
         uint256 airdropAmount = davWholeUnits * AIRDROP_PER_DAV; // 10,000 tokens per DAV
         
         // Get tokens burned in Step 2 (already tracked)
@@ -889,17 +922,14 @@ contract SWAP_V3 is Ownable(msg.sender), ReentrancyGuard, SwapErrors, SwapEvents
         }
     }
 
-    function setPairAddress(address token, address pair) external onlyGovernance {
-        auctionAdmin.registerTokenWithPair(address(this), token, governanceAddress, pair);
-    }
-
     /**
      * @notice One-click pool creation with PERMANENT liquidity (LP tokens burned)
-     * @dev Creates STATE/token pool and burns LP tokens making it UNRUGGABLE
+     * @dev Creates STATE/token pool and burns LP tokens making it unruggable
      * @param token Token to pair with STATE
      * @param tokenAmount Amount of token for initial liquidity
      * @param stateAmount Amount of STATE for initial liquidity
      * @return pair Address of the created pair
+     * @custom:access Governance-only function, requires proper token validation
      */
     function createPoolOneClick(
         address token,
@@ -1024,6 +1054,11 @@ contract SWAP_V3 is Ownable(msg.sender), ReentrancyGuard, SwapErrors, SwapEvents
     
     // ================= User Registration Management =================
     
+    /**
+     * @notice Update maximum auction participant limit
+     * @param newMax New maximum participant count (must be >= current registered users)
+     * @dev Governance-only function to adjust participant cap (default 2500)
+     */
     function setMaxAuctionParticipants(uint256 newMax) external onlyGovernance {
         if (newMax == 0) revert InvalidParam();
         if (newMax < totalRegisteredUsers) revert InvalidParam(); // Cannot be less than current registered users
@@ -1041,16 +1076,8 @@ contract SWAP_V3 is Ownable(msg.sender), ReentrancyGuard, SwapErrors, SwapEvents
      * @param auctionToken Token to receive from swap
      * @param stateAmountIn Amount of STATE to swap
      * @return Amount of auction tokens received
-     * @dev AUDIT NOTE - Reentrancy Protection:
-     *      This function makes external calls to PulseX router. Protection mechanisms:
-     *      1. All entry points use nonReentrant modifier (OpenZeppelin ReentrancyGuard)
-     *      2. Uses SafeERC20 for all token transfers (prevents malicious token exploits)
-     *      3. Follows CEI pattern: state updates happen AFTER external calls where needed
-     *      4. PulseX router is a trusted contract (Uniswap V2 fork)
-     *      5. Tokens sent directly to user (not held by contract during swap)
-     *      
-     *      The external call to router is necessary for DEX integration. Reentrancy guard
-     *      at function entry point prevents any state corruption.
+     * @dev Protected by ReentrancyGuard on calling functions, uses SafeERC20 for transfers
+     * @custom:slippage 5% tolerance for low-liquidity pools, adjustable via governance
      */
     function _executePoolSwap(address user, address auctionToken, uint256 stateAmountIn) internal returns (uint256) {
         if (pulseXRouter == address(0)) revert RouterNotSet();
@@ -1115,42 +1142,27 @@ contract SWAP_V3 is Ownable(msg.sender), ReentrancyGuard, SwapErrors, SwapEvents
     // ... (Keep all the governance delegation functions from previous version)
     // They remain the same as in the previous split
 
+    /**
+     * @notice Pause all auction operations
+     * @dev Governance emergency function, blocks all whenNotPaused operations
+     */
     function pause() external onlyGovernance {
-        if (address(auctionAdmin) != address(0)) {
-            auctionAdmin.pause(address(this));
-        } else {
-            paused = true;
-            emit ContractPaused(msg.sender);
-        }
+        paused = true;
+        emit ContractPaused(msg.sender);
     }
 
+    /**
+     * @notice Resume auction operations
+     * @dev Governance function to unpause contract after emergency
+     */
     function unpause() external onlyGovernance {
-        if (address(auctionAdmin) != address(0)) {
-            auctionAdmin.unpause(address(this));
-        } else {
-            paused = false;
-            emit ContractUnpaused(msg.sender);
-        }
+        paused = false;
+        emit ContractUnpaused(msg.sender);
     }
 
     // ... (All other governance functions remain the same as previous version)
 
     // ================= Internal State Setters for Admin Contract =================
-    
-    /**
-     * @notice Internal setter for paused state (called by AuctionAdmin only)
-     * @param _paused New paused state
-     * @dev AUDIT NOTE: Access control relies on proper system initialization via initializeCompleteSystem()
-     *      which atomically sets auctionAdmin with zero-address validation. This pattern is secure because:
-     *      1. Contract is deployed by governance (constructor sets owner)
-     *      2. initializeCompleteSystem() validates all addresses before setting
-     *      3. Only callable by governance (onlyGovernance modifier)
-     *      4. Once initialized, auctionAdmin is immutable for these internal setters
-     */
-    function _setPaused(bool _paused) external {
-        if (msg.sender != address(auctionAdmin)) revert OnlyAdmin();
-        paused = _paused;
-    }
     
     /**
      * @notice Internal setter for max auction participants (called by AuctionAdmin only)
@@ -1171,26 +1183,11 @@ contract SWAP_V3 is Ownable(msg.sender), ReentrancyGuard, SwapErrors, SwapEvents
     }
     
     /**
-     * @notice Internal setter for pending governance (called by AuctionAdmin only)
-     * @param pending Pending governance address
-     * @param timestamp Timestamp when governance update can be finalized
-     */
-    function _setPendingGovernance(address pending, uint256 timestamp) external {
-        if (msg.sender != address(auctionAdmin)) revert OnlyAdmin();
-        pendingGovernance = pending;
-        governanceUpdateTimestamp = timestamp;
-    }
-    
-    /**
      * @notice Register deployed token (called by AuctionAdmin only)
      * @param tokenAddress Address of deployed token
      * @param name Token name
      * @param deployer Address of token deployer
-     * @dev AUDIT NOTE - Array Bounds:
-     *      The autoRegisteredTokens array has a hard limit of scheduleSize (50 tokens).
-     *      Explicit check: `if (autoRegisteredTokens.length >= auctionSchedule.scheduleSize) revert`
-     *      This prevents unbounded growth and ensures gas costs remain reasonable.
-     *      At 50 tokens, array operations are efficient and well within gas limits.
+     * @dev Array limited to scheduleSize (50 tokens max) to ensure reasonable gas costs
      */
     function _registerDeployedToken(address tokenAddress, string memory name, address deployer) external {
         if (msg.sender != address(auctionAdmin)) revert OnlyAdmin();
@@ -1218,6 +1215,7 @@ contract SWAP_V3 is Ownable(msg.sender), ReentrancyGuard, SwapErrors, SwapEvents
      * @param _airdropDistributor AirdropDistributor contract address
      * @param _auctionAdmin AuctionAdmin contract address
      * @param _buyBurnController BuyAndBurnController address for allowance setup
+     * @param _swapLens SwapLens contract address (optional - can be address(0))
      * @param _pulseXRouter PulseX router address
      * @param _pulseXFactory PulseX factory address
      */
@@ -1227,6 +1225,7 @@ contract SWAP_V3 is Ownable(msg.sender), ReentrancyGuard, SwapErrors, SwapEvents
         address _airdropDistributor,
         address _auctionAdmin,
         address _buyBurnController,
+        address _swapLens,
         address _pulseXRouter,
         address _pulseXFactory
     ) external onlyGovernance nonReentrant {
@@ -1240,9 +1239,12 @@ contract SWAP_V3 is Ownable(msg.sender), ReentrancyGuard, SwapErrors, SwapEvents
         
         // Set all contract addresses
         stateToken = _stateToken;
+        davToken = _davToken;
         dav = IDAV(_davToken);
         airdropDistributor = _airdropDistributor;
         auctionAdmin = IAuctionAdmin(_auctionAdmin);
+        buyAndBurnController = _buyBurnController;
+        swapLens = _swapLens;
         pulseXRouter = _pulseXRouter;
         pulseXFactory = _pulseXFactory;
         

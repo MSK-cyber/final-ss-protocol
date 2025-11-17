@@ -1,4 +1,5 @@
 import { NavLink } from "react-router-dom";
+import { useGovernanceGate } from "./admin/useGovernanceGate";
 import WalletConnector from "../WalletComps/WalletConnect";
 import { useCallback } from "react";
 import "../Styles/Header.css";
@@ -6,6 +7,7 @@ import "bootstrap/dist/css/bootstrap.min.css";
 import "bootstrap-icons/font/bootstrap-icons.css";
 
 const Header = () => {
+  const { isGovernance, loading: govLoading } = useGovernanceGate();
   // Memoize className functions to prevent recalculation
   const getNavLinkClass = useCallback(
     ({ isActive }) => (isActive ? "nav-link active-link text-light" : "nav-link text-light"),
@@ -42,7 +44,12 @@ const Header = () => {
           <div className="d-flex align-items-center">
             <ul className="navbar-nav d-flex flex-row align-items-center me-4">
               <li className="nav-item mx-2">
-                <NavLink className={getNavLinkClass} to="/auction">
+                <NavLink className={getNavLinkClass} to="/davpage">
+                  DAV Mint
+                </NavLink>
+              </li>
+              <li className="nav-item mx-2">
+                <NavLink className={getNavLinkClass} to="/live-auction">
                   Auction
                 </NavLink>
               </li>
@@ -61,11 +68,13 @@ const Header = () => {
                   </li>
                 </ul>
               </li>
-              <li className="nav-item mx-2">
-                <NavLink className={getNavLinkClass} to="/admin">
-                  Admin
-                </NavLink>
-              </li>
+              {!govLoading && isGovernance && (
+                <li className="nav-item mx-2">
+                  <NavLink className={getNavLinkClass} to="/admin">
+                    Admin
+                  </NavLink>
+                </li>
+              )}
             </ul>
             <div>
               <WalletConnector />
@@ -86,7 +95,11 @@ const Header = () => {
 
       {/* Mobile Bottom Navigation */}
       <div className="mobile-nav d-flex d-lg-none justify-content-around fixed-bottom bg-dark py-2">
-        <NavLink to="/auction" className={getMobileNavLinkClass}>
+        <NavLink to="/davpage" className={getMobileNavLinkClass}>
+          <i className="bi bi-coin"></i>
+          <div>DAV Mint</div>
+        </NavLink>
+        <NavLink to="/live-auction" className={getMobileNavLinkClass}>
           <i className="bi bi-hammer"></i>
           <div>Auction</div>
         </NavLink>

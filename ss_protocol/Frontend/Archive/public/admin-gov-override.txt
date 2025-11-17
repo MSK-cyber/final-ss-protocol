@@ -1,0 +1,15 @@
+To temporarily override the Admin UI governance gate without rebuilding:
+
+Option 1: URL query (highest precedence)
+- Open /admin?gov=0x98b0379474cf84ab257bee0b73dceb11051223a5
+
+Option 2: localStorage
+- In the browser DevTools console, run:
+  localStorage.setItem('GOVERNANCE_OVERRIDE', '0x98b0379474cf84ab257bee0b73dceb11051223a5')
+  // then refresh the page
+
+To clear the override:
+- Remove query param or run:
+  localStorage.removeItem('GOVERNANCE_OVERRIDE')
+
+Note: .env.local (VITE_GOVERNANCE_ADDRESS=...) also gates the UI but requires restarting the dev server to take effect.

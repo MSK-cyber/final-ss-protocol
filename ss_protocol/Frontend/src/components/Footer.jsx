@@ -2,33 +2,79 @@ import "bootstrap/dist/css/bootstrap.min.css";
 import "bootstrap-icons/font/bootstrap-icons.css";
 import "../Styles/Header.css";
 import { FaXTwitter } from "react-icons/fa6";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useContext } from "react";
 import { useLocation } from "react-router-dom";
 import { useSwapContract } from "../Functions/SwapContractFunctions";
 import { formatCountdown } from "../Constants/Utils";
+// import { formatDuration } from "../utils/auctionTiming";
+import { ContractContext } from "../Functions/ContractInitialize";
+import { ethers } from "ethers";
 
 const Footer = () => {
   const location = useLocation();
-  const { AuctionTime = {}, IsAuctionActive = {} } = useSwapContract();
+  // Guard against undefined context during early render
+  const swapCtx = useSwapContract() || {};
+  const { 
+    AuctionTime = {}, 
+    IsAuctionActive = {}, 
+    isReversed = {}, 
+    auctionPhase, 
+    auctionPhaseSeconds = 0,
+    auctionPhaseEndAt,
+    todayTokenAddress, // Use centralized today's token address from context
+  } = swapCtx;
+  const { AllContracts } = useContext(ContractContext);
+  // We now rely exclusively on chain-anchored auctionPhaseSeconds from context for accuracy
+  // Remove per-token fallback to avoid key mismatches or duplicated entries
+  const [reverseNow, setReverseNow] = useState(null);
+  const [lastKnownReverse, setLastKnownReverse] = useState(null);
 
-  // Derive a simple, global "next ending" auction timer
-  const getNextEndingSeconds = () => {
+  // Fetch on-chain reverse status for today's token using centralized address from context
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        if (!AllContracts?.AuctionContract) { setReverseNow(null); return; }
+        // Use centralized todayTokenAddress from context instead of fetching independently
+        if (!todayTokenAddress || todayTokenAddress === ethers.ZeroAddress) { 
+          setReverseNow(null); 
+          return; 
+        }
+        const rev = await AllContracts.AuctionContract.isReverseAuctionActive(todayTokenAddress);
+        if (!cancelled) {
+          const val = Boolean(rev);
+          setReverseNow(val);
+          setLastKnownReverse(val);
+        }
+      } catch (e) {
+        if (!cancelled) setReverseNow(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [AllContracts?.AuctionContract, todayTokenAddress]);
+
+  // REMOVED: Local ticking interval - countdown happens in SwapContractFunctions
+  // The AuctionTime from context is already updating every second
+
+  // Helper to format a UNIX seconds timestamp into PKT timezone
+  const formatPKT = (tsSec) => {
     try {
-      const times = Object.entries(AuctionTime)
-        .map(([name, secs]) => ({
-          name,
-          secs: Number(secs) || 0,
-          active: IsAuctionActive?.[name] === true || IsAuctionActive?.[name] === "true",
-        }))
-        .filter((t) => t.secs > 0);
-      if (!times.length) return 0;
-      return Math.min(...times.map((t) => t.secs));
+      const dt = new Date(Number(tsSec || 0) * 1000);
+      if (!Number.isFinite(dt.getTime())) return "Invalid Date";
+      return new Intl.DateTimeFormat('en-GB', {
+        timeZone: 'Asia/Karachi',
+        year: 'numeric',
+        month: 'short',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+      }).format(dt) + ' PKT';
     } catch {
-      return 0;
+      try { const d = new Date(Number(tsSec || 0) * 1000); return d.toLocaleString('en-GB') + ' PKT'; } catch { return 'Invalid Date'; }
     }
   };
 
-  const nextEnding = getNextEndingSeconds();
   const messages = [
     "V.3 = 30% more yield on ratio swaps",
     "Refresh when minting more DAV tokens.",
@@ -45,6 +91,21 @@ const Footer = () => {
     // Clean up interval on component unmount
     return () => clearInterval(interval);
   }, [messages.length]);
+
+  // Determine mode (Reverse/Normal) for the currently active token
+  const resolveBool = (v) => v === true || v === "true";
+  // Map-based reverse flag may be keyed differently; prefer on-chain reverseNow
+  const mappedIsReversed = false;
+  // Prefer on-chain; if temporarily unknown, keep last known; finally fallback to mapped flag.
+  const isReverseMode = reverseNow !== null ? reverseNow : (lastKnownReverse !== null ? lastKnownReverse : mappedIsReversed);
+  const modeLabel = isReverseMode ? "Reverse" : "Normal";
+  // Use pink accent for Reverse to match navbar/hero active color (#ff4081)
+  // Match Normal auction badge color to primary button background (Bootstrap .btn-primary)
+  // Reverse stays pink (#ff4081) per navbar active color requirement
+  // Remove Bootstrap bg-* classes to avoid legacy colors showing
+  const modeStyle = isReverseMode
+    ? { fontSize: "12px", backgroundColor: "#ff4081", color: "#ffffff" }
+    : { fontSize: "12px", backgroundColor: "#0d6efd", color: "#ffffff" };
   return (
     <footer
       className="bg-dark py-1 d-none d-md-block"
@@ -57,17 +118,27 @@ const Footer = () => {
     >
       <div className="container">
         <div className="d-flex justify-content-between align-items-center">
-          {/* Left: Auction timer (always visible) */}
-          <div className="d-flex align-items-center gap-2 text-white" style={{ minWidth: 180 }}>
-            <span style={{ fontSize: "14px" }}>
-              Auction Timer: <strong>{formatCountdown(nextEnding)}</strong>
+          {/* Left: Auction or Interval timer (live from contract) */}
+          <div className="d-flex align-items-center gap-2 text-white" style={{ minWidth: 220 }}>
+            {auctionPhase === 'interval' ? (
+              <span style={{ fontSize: "14px" }}>
+                Auction starts in {formatCountdown(Number(auctionPhaseSeconds || 0))}
+              </span>
+            ) : (
+              <span style={{ fontSize: "14px" }}>
+                Auction Timer: {" "}
+                {formatCountdown(Number(auctionPhaseSeconds || 0))}
+              </span>
+            )}
+            <span className="badge" style={modeStyle} title={`Auction Mode: ${modeLabel}`}>
+              {modeLabel}
             </span>
           </div>
 
           {/* Middle: rotating message */}
           <div
-            className="flex-grow-1 text-center text-white"
-            style={{ fontSize: "14px", marginLeft: "100px" }}
+            className="flex-grow-1 text-center text-white px-3"
+            style={{ fontSize: "14px" }}
           >
             {messages[currentMessageIndex]}
           </div>

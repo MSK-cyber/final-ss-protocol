@@ -1,0 +1,34 @@
+/* Floating label input styles for Swap boxes */
+.floating-group {
+  position: relative;
+}
+.floating-label {
+  position: absolute;
+  top: -12px;
+  left: 12px;
+  padding: 0 8px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: rgba(255,255,255,0.85);
+  background: #0f0f10; /* matches swap panel background */
+  border-radius: 6px;
+  transition: all .18s ease;
+  pointer-events: none;
+}
+.floating-group:focus-within .floating-label {
+  color: #fff;
+}
+/* Ensure inputs look good with label sitting on border */
+.floating-input {
+  width: 100%;
+  box-shadow: none !important;
+}
+/* Brighten both boxes when typing handled inline; add optional active class */
+.floating-group.active .floating-input {
+  border-color: #ffffff !important;
+}
+/* Error state override */
+.floating-group .floating-input.error,
+.floating-group.error .floating-input {
+  border-color: #dc3545 !important;
+}

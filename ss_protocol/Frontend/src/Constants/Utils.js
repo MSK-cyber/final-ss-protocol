@@ -1,12 +1,14 @@
 import { chainCurrencyMap } from "../../WalletConfig";
 
 export function formatCountdown(seconds) {
-    if (!seconds || seconds <= 0) return "0h 0m";
+    const s = Number(seconds) || 0;
+    if (s <= 0) return "0h 0m 0s";
 
-    const hours = Math.floor((seconds % (24 * 60 * 60)) / (60 * 60));
-    const minutes = Math.floor((seconds % (60 * 60)) / 60);
+    const hours = Math.floor((s % 86400) / 3600);
+    const minutes = Math.floor((s % 3600) / 60);
+    const secs = Math.floor(s % 60);
 
-    return `${hours}h ${minutes}m`;
+    return `${hours}h ${minutes}m ${secs}s`;
 }
 
 export function formatTimeVerbose(seconds) {
@@ -61,8 +63,18 @@ export const validateInputAmount = (rawValue) => {
 };
 // Helper functions (exported for use in other files)
 export function calculatePlsValue(token, tokenBalances, pstateToPlsRatio, chainId) {
-    if (token.tokenName === "DAV" || token.tokenName === "STATE") {
+    // DAV has no PLS valuation; STATE should display user's STATE holdings converted to PLS
+    if (token.tokenName === "DAV") {
         return "-----";
+    }
+    if (token.tokenName === "STATE") {
+        const userBalance = tokenBalances["STATE"];
+        const ratio = parseFloat(pstateToPlsRatio || 0);
+        if (userBalance === undefined || ratio <= 0) {
+            return "Loading...";
+        }
+        const plsValue = parseFloat(userBalance) * ratio;
+        return `${formatWithCommas(plsValue.toFixed(0))} ${chainCurrencyMap[chainId] || 'PLS'}`;
     }
 
     const userBalance = tokenBalances[token.tokenName];
@@ -80,6 +92,8 @@ export function calculatePlsValue(token, tokenBalances, pstateToPlsRatio, chainI
 }
 
 export function calculatePlsValueNumeric(token, tokenBalances, pstateToPlsRatio) {
+    // Keep STATE numeric contribution as 0 here to avoid double counting,
+    // totals add STATE→PLS separately in the components.
     if (token.tokenName === "DAV" || token.tokenName === "STATE") {
         return 0;
     }

@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useContext, useEffect, useState } from "react";
 import { ethers } from "ethers";
 import { useAccount } from "wagmi";
+import { ContractContext } from "../../Functions/ContractInitialize";
 
 /**
  * Fetch user balances for all supported tokens.
@@ -10,11 +11,14 @@ import { useAccount } from "wagmi";
  */
 const useTokenBalances = (TOKENS, signer) => {
   const { address } = useAccount();
+  const { provider } = useContext(ContractContext);
   const [balances, setBalances] = useState({});
 
   useEffect(() => {
     const fetchBalances = async () => {
-      if (!address || !signer || !TOKENS) return;
+      // Prefer read-only provider whenever possible for stability
+      const readProvider = provider || signer?.provider;
+      if (!address || !readProvider || !TOKENS) return;
 
       const tempBalances = {};
 
@@ -25,19 +29,29 @@ const useTokenBalances = (TOKENS, signer) => {
 
           // PLS balance
           if (symbol === "WPLS") {
-            const plsBal = await signer.provider.getBalance(address);
+            const plsBal = await readProvider.getBalance(address);
             tempBalances[symbol] = ethers.formatUnits(plsBal, 18);
-          } else {
-            const contract = new ethers.Contract(
-              token.address,
-              ["function balanceOf(address) view returns (uint256)"],
-              signer
-            );
-            const bal = await contract.balanceOf(address);
-            tempBalances[symbol] = ethers.formatUnits(bal, token.decimals);
+            continue;
           }
+
+          // Guard: ensure the address has contract code before treating it as ERC20
+          const code = await readProvider.getCode(token.address).catch(() => "0x");
+          if (!code || code === "0x") {
+            // Not a contract (or not yet deployed) — treat balance as zero
+            tempBalances[symbol] = "0";
+            continue;
+          }
+
+          const contract = new ethers.Contract(
+            token.address,
+            ["function balanceOf(address) view returns (uint256)"],
+            readProvider
+          );
+          const bal = await contract.balanceOf(address);
+          const decimals = Number.isFinite(Number(token.decimals)) ? token.decimals : 18;
+          tempBalances[symbol] = ethers.formatUnits(bal, decimals);
         } catch (err) {
-          console.error(`Error fetching balance for ${symbol}:`, err);
+          console.warn(`Error fetching balance for ${symbol}:`, err?.shortMessage || err?.message || err);
           tempBalances[symbol] = "0";
         }
       }
@@ -46,7 +60,7 @@ const useTokenBalances = (TOKENS, signer) => {
     };
 
     fetchBalances();
-  }, [address, signer, TOKENS]);
+  }, [address, provider, signer, TOKENS]);
 
   return balances;
 };

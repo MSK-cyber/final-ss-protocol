@@ -6,36 +6,14 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 /**
  * @title BurnLib
+ * @author State Protocol Team
  * @notice Library for handling token burning operations in the auction system
- * @dev ARCHITECTURE NOTE - Library Access Control:
- *      This is a LIBRARY, not a standalone contract. Library functions can ONLY be called
- *      by contracts that import them (in this case, AuctionSwap.sol).
- *      
- *      Security Model:
- *      - Library functions are NOT directly callable by users on-chain
- *      - Only AuctionSwap.sol can invoke these functions
- *      - AuctionSwap.sol provides all access control (nonReentrant, whenNotPaused, validations)
- *      - Library focuses on execution logic, not security checks
- *      
- *      Token Flow:
- *      - Normal Auction: Users burn auction tokens → receive STATE from vault
- *      - Reverse Auction: Users burn STATE → receive auction tokens from vault
- *      - All burned tokens sent to 0xdead address (permanent removal from circulation)
- *      
- *      Validation:
- *      - All input validation happens in AuctionSwap.sol BEFORE calling library
- *      - Validating in library would be redundant and waste gas
- *      - This separation of concerns is intentional and follows best practices
- *      
- *      Reentrancy Protection:
- *      - Protected by nonReentrant modifier in AuctionSwap.sol entry points
- *      - Library inherits protection from calling contract
- *      - SafeERC20 used for all token transfers (prevents malicious token exploits)
- *      
- *      AUDIT CLARIFICATION:
- *      If you're auditing this library in isolation, you MUST examine AuctionSwap.sol
- *      to understand the complete security model. Library functions are helper code,
- *      not standalone entry points.
+ * @dev Library functions called only by AuctionSwap.sol (not directly callable by users).
+ * @custom:security Access control enforced in AuctionSwap.sol (nonReentrant, whenNotPaused)
+ * @custom:normal-flow Users burn auction tokens → receive STATE from vault
+ * @custom:reverse-flow Users burn STATE → receive auction tokens
+ * @custom:burn-address All burned tokens sent to 0xdead (permanent removal)
+ * @custom:validation Input validation handled by AuctionSwap.sol before library calls
  */
 library BurnLib {
     using SafeERC20 for IERC20;
@@ -113,31 +91,11 @@ library BurnLib {
     
     /**
      * @notice Execute normal auction token burn (Step 2 of normal auction)
-     * @dev This function is called ONLY by AuctionSwap.burnTokensForState()
-     *      All validation happens in the calling function before this is invoked.
-     *      
-     *      Operation Flow:
-     *      1. Update user's burn tracking (allows multiple burns per cycle)
-     *      2. Burn auction tokens permanently to dead address
-     *      3. Transfer STATE tokens from vault to user
-     *      4. Emit tracking events
-     *      
-     *      Security & Validation (ALL done in AuctionSwap.sol before calling this):
-     *      - nonReentrant modifier protects against reentrancy
-     *      - whenNotPaused ensures system is active
-     *      - Token validation: supportedTokens[auctionToken] check, stateToken != address(0)
-     *      - Balance validation: userBalance >= tokensToBurn
-     *      - Allowance validation: user approved contract to spend tokens
-     *      - DAV validation: totalDavBalance >= MIN_DAV_REQUIRED
-     *      - Cycle validation: currentCycle calculated and tracked
-     *      - Vault validation: contract has sufficient STATE balance
-     *      - Step 1 validation: user completed airdrop claim (via AirdropDistributor)
-     *      
-     *      No validation needed in library - all checks done at application layer.
-     *      This is intentional for gas efficiency (no redundant validation).
-     *      Uses SafeERC20 for all transfers (prevents malicious token exploits).
-     *      
-     * @param params Struct containing burn operation parameters (pre-validated by caller)
+     * @dev Called by AuctionSwap.burnTokensForState() after validation
+     * @custom:flow Update tracking → Burn auction tokens to 0xdead → Transfer STATE from vault → Emit events
+     * @custom:validation All checks performed in AuctionSwap.sol before calling
+     * @custom:accumulation Allows multiple burns per cycle (values accumulate)
+     * @param params Struct containing burn operation parameters (pre-validated)
      * @param hasUserBurnedTokens Mapping tracking if user has burned tokens for a cycle
      * @param userStateBalance Mapping of user's STATE balance earned per cycle
      * @param tokensBurnedByUser Mapping of tokens burned by user per cycle
@@ -179,34 +137,11 @@ library BurnLib {
 
     /**
      * @notice Execute reverse auction STATE burn (Step 2 of reverse auction)
-     * @dev This function is called ONLY by AuctionSwap.burnStateForTokens()
-     *      All validation happens in the calling function before this is invoked.
-     *      
-     *      Operation Flow:
-     *      1. Verify user hasn't already completed reverse step 2 (once per cycle)
-     *      2. Mark step 2 as completed
-     *      3. Burn STATE tokens permanently to dead address
-     *      4. Transfer auction tokens from vault to user
-     *      5. Emit tracking events
-     *      
-     *      Security & Validation (ALL done in AuctionSwap.sol before calling this):
-     *      - nonReentrant modifier protects against reentrancy
-     *      - whenNotPaused ensures system is active
-     *      - Token validation: supportedTokens[auctionToken] check, stateToken != address(0)
-     *      - Reverse auction validation: isReverseAuctionActive(auctionToken)
-     *      - Cycle validation: currentCycle <= MAX_CYCLES_PER_TOKEN
-     *      - Step 1 validation: hasCompletedReverseStep1[user][token][cycle]
-     *      - Balance validation: userCurrentStateBalance >= stateToBurn
-     *      - Allowance validation: user approved contract to spend STATE
-     *      - Vault validation: contract has sufficient auction tokens
-     *      - Amount validation: stateToBurn forced to exact reverseStateBalance amount
-     *      
-     *      Library adds double-execution protection via hasCompletedReverseStep2 flag.
-     *      No other validation needed - all checks done at application layer.
-     *      This is intentional for gas efficiency (no redundant validation).
-     *      Uses SafeERC20 for all transfers (prevents malicious token exploits).
-     *      
-     * @param params Struct containing reverse burn operation parameters (pre-validated by caller)
+     * @dev Called by AuctionSwap.burnStateForTokens() after validation
+     * @custom:flow Verify not completed → Mark completed → Burn STATE to 0xdead → Transfer auction tokens → Emit events
+     * @custom:validation All checks performed in AuctionSwap.sol before calling
+     * @custom:once-per-cycle Prevents double execution via hasCompletedReverseStep2 flag
+     * @param params Struct containing reverse burn operation parameters (pre-validated)
      * @param hasCompletedReverseStep2 Mapping tracking reverse step 2 completion
      * @param reverseStateBalance Mapping of STATE balance from reverse step 1
      * @param TotalTokensBurned Mapping tracking total burned tokens globally

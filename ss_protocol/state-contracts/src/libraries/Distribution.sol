@@ -3,43 +3,21 @@ pragma solidity ^0.8.20;
 
 /**
  * @title Distribution
+ * @author State Protocol Team
  * @notice Library for managing DAV token holder distribution and rewards
- * @dev ARCHITECTURE NOTE - Library Access Control:
- *      This is a LIBRARY, not a standalone contract. Library functions can ONLY be called
- *      by contracts that import them (in this case, DavToken.sol).
- *      
- *      Security Model:
- *      - Library functions are NOT directly callable by users on-chain
- *      - Only DavToken.sol can invoke these functions
- *      - DavToken.sol provides all access control (nonReentrant, onlyGovernance, etc.)
- *      - Library focuses on calculation and storage logic, not security checks
- *      
- *      Holder Management:
- *      - Maintains list of up to 5000 DAV holders for reward distribution
- *      - Uses O(1) index mapping for efficient holder addition/removal
- *      - Automatically updates holder status based on active DAV balance
- *      
- *      Distribution Logic:
- *      - Distributes rewards proportionally based on active DAV balance
- *      - Uses two-pass algorithm: calculate total supply, then distribute proportionally
- *      - Handles precision loss via dust distribution (intentional design choice)
- *      - Dust given to first eligible holder for gas efficiency
- *      
- *      Gas Optimizations:
- *      - Index mapping for O(1) holder removal (~145k gas saved)
- *      - Cached array lengths in loops (~21M gas saved per distribution)
- *      - Efficient storage access patterns
- *      
- *      AUDIT CLARIFICATION:
- *      If you're auditing this library in isolation, you MUST examine DavToken.sol
- *      to understand the complete security model. Library functions are helper code,
- *      not standalone entry points.
+ * @dev Library functions can only be called by DavToken.sol (not directly by users).
+ * @custom:security Access control enforced in DavToken.sol (nonReentrant, onlyGovernance)
+ * @custom:holders Maximum 2500 DAV holders for reward distribution
+ * @custom:indexing Uses 1-based index mapping for O(1) holder removal (~145k gas saved)
+ * @custom:distribution Two-pass algorithm: calculate total supply, then distribute proportionally
+ * @custom:dust Precision loss handled by giving dust to first eligible holder
+ * @custom:gas Cached array lengths in loops (~21M gas saved per distribution)
  */
 library Distribution {
     
     /// @notice Maximum number of DAV holders that can participate in distributions
-    /// @dev Limit set at 5000 to balance gas costs with inclusivity
-    uint256 public constant MAX_HOLDERS = 5000;
+    /// @dev Limit set at 2500 to balance gas costs with inclusivity
+    uint256 public constant MAX_HOLDERS = 2500;
     
     /**
      * @notice State management for DAV holder tracking and rewards
@@ -86,36 +64,13 @@ library Distribution {
     
     /**
      * @notice Updates DAV holder status based on active balance
-     * @dev This function is called ONLY by DavToken.sol during transfers, mints, burns
-     *      All validation happens in the calling function before this is invoked.
-     *      
-     *      Addition Flow (when balance > 0 and not governance):
-     *      1. Check holder limit (5000 max)
-     *      2. Add to davHolders array
-     *      3. Store 1-based index in holderIndex mapping
-     *      4. Increment counter
-     *      
-     *      Removal Flow (when balance = 0):
-     *      1. Use O(1) index lookup to find position
-     *      2. Swap with last element in array
-     *      3. Update moved element's index
-     *      4. Pop last element
-     *      5. Clear removed holder's index
-     *      6. Decrement counter
-     *      
-     *      Gas Optimization:
-     *      - Addition: ~30k gas (array push + mapping writes)
-     *      - Removal: ~5k gas (O(1) lookup vs ~150k for O(n) loop)
-     *      
-     *      Security:
-     *      - Protected by DavToken.sol's access controls
-     *      - Governance address explicitly excluded from holder list
-     *      - Holder limit prevents unbounded array growth
-     *      
      * @param state HolderState storage reference from DavToken.sol
      * @param account Address to update holder status for
      * @param governance Governance address to exclude from holder list
      * @param getActiveBalance Function pointer to get account's active DAV balance
+     * @custom:indexing Uses 1-based indexing: holderIndex[account] = 0 means not in array, >= 1 means in array
+     * @custom:safety Removal only executes when isDAVHolder[account] == true, preventing underflow
+     * @custom:gas O(1) removal via swap-and-pop pattern saves ~145k gas vs O(n) loop
      */
     function updateDAVHolderStatus(
         HolderState storage state,
@@ -126,7 +81,7 @@ library Distribution {
         bool hasActiveBalance = getActiveBalance(account) > 0;
         if (hasActiveBalance && account != governance) {
             if (!state.isDAVHolder[account]) {
-                // Enforce 5000 holder limit
+                // Enforce 2500 holder limit
                 require(state.davHoldersCount < MAX_HOLDERS, "Maximum holder limit reached");
                 
                 // Add new holder
@@ -137,7 +92,7 @@ library Distribution {
                 emit HolderAdded(account);
             }
         } else if (!hasActiveBalance && state.isDAVHolder[account]) {
-            // Remove holder using O(1) index lookup
+            // Remove holder using O(1) index lookup (swap-and-pop pattern)
             state.isDAVHolder[account] = false;
             
             // Get the index of the account to remove (convert from 1-based to 0-based)
@@ -148,7 +103,7 @@ library Distribution {
                 // Move last element to the position of the removed element
                 address lastHolder = state.davHolders[lastIndex];
                 state.davHolders[indexToRemove] = lastHolder;
-                // Update the moved holder's index
+                // Update the moved holder's index (1-based: add 1 to 0-based index)
                 state.holderIndex[lastHolder] = indexToRemove + 1; // Store 1-based index
             }
             
@@ -163,41 +118,15 @@ library Distribution {
     
     /**
      * @notice Distribute holder rewards proportionally based on active DAV balance
-     * @dev This function is called ONLY by DavToken.sol during ETH minting
-     *      All validation happens in the calling function before this is invoked.
-     *      
-     *      Two-Pass Algorithm:
-     *      Pass 1: Calculate total active supply across all holders
-     *      Pass 2: Distribute rewards proportionally based on each holder's share
-     *      
-     *      Distribution Formula:
-     *      holderReward = (holderShare × userBalance) ÷ totalActiveSupply
-     *      
-     *      Precision Loss Handling:
-     *      - Integer division causes truncation (standard Solidity behavior)
-     *      - Remaining "dust" is collected and given to first eligible holder
-     *      - This is intentional design for gas efficiency
-     *      - Distributing dust proportionally would cost more gas than dust value
-     *      
-     *      Gas Optimizations:
-     *      - Array length cached once (saves ~10.5M gas per loop at 5000 holders)
-     *      - Two loops total: ~1-2M gas at full capacity
-     *      - Direct mapping writes (no intermediate arrays)
-     *      
-     *      Edge Cases:
-     *      - holderShare = 0: Early return (no-op)
-     *      - totalActiveSupply = 0: Early return (no eligible holders)
-     *      - Governance always excluded from distribution
-     *      
-     *      Security:
-     *      - Protected by DavToken.sol's nonReentrant modifier
-     *      - No external calls (only function pointer to view function)
-     *      - All state updates happen before dust distribution
-     *      
      * @param state HolderState storage reference from DavToken.sol
      * @param holderShare Total amount to distribute among holders
      * @param governance Governance address to exclude from distribution
      * @param getActiveMintedBalance Function pointer to get holder's active minted DAV balance
+     * @custom:atomic Both loops execute in single transaction (nonReentrant prevents state changes)
+     * @custom:algorithm Two-pass: calculate total supply, then distribute proportionally
+     * @custom:formula holderReward = (holderShare × userBalance) ÷ totalActiveSupply
+     * @custom:dust Integer division truncation collected and given to first eligible holder
+     * @custom:gas Array length cached once (saves ~5.25M gas per loop at 2500 holders)
      */
     function distributeHolderShare(
         HolderState storage state,
@@ -255,30 +184,14 @@ library Distribution {
     
     /**
      * @notice Distribute remaining dust to first eligible holder
-     * @dev This is an INTENTIONAL DESIGN CHOICE for gas efficiency, not a bug.
-     *      
-     *      Why Give All Dust to First Holder:
-     *      1. Dust amounts are tiny (wei-level remainders from integer division)
-     *      2. Distributing proportionally would cost MORE gas than dust value
-     *      3. Front-running dust is economically irrational (gas cost > dust value)
-     *      4. Simpler logic = less code = lower audit surface
-     *      
-     *      Alternative Considered:
-     *      - Proportional distribution: Requires another full loop (~10.5M gas at 5000 holders)
-     *      - Typical dust: 1-5000 wei (worth ~$0.000001 USD)
-     *      - Gas cost: ~10.5M gas (~$100+ USD at high gas prices)
-     *      - Decision: Simple distribution is more practical
-     *      
-     *      Fairness Note:
-     *      - Over many distributions, different holders receive dust
-     *      - Array order changes as holders enter/exit
-     *      - Statistical distribution approaches fairness over time
-     *      
      * @param state HolderState storage reference
      * @param dustAmount Remaining wei to distribute
      * @param governance Governance address to exclude
      * @param getActiveMintedBalance Function pointer to get holder's balance
      * @return distributed Amount of dust actually distributed
+     * @custom:design Intentional simplicity over proportional distribution (saves ~5.25M gas)
+     * @custom:economics Dust worth $0.000001, gas to manipulate costs $0.0002+ (irrational to exploit)
+     * @custom:fairness Array order changes dynamically as holders enter/exit
      */
     function _distributeDustSimple(
         HolderState storage state,
@@ -310,31 +223,6 @@ library Distribution {
 
     /**
      * @notice Calculate ETH distribution among different recipients
-     * @dev Pure calculation function - performs no state changes
-     *      Called by DavToken.sol during ETH minting to determine allocation
-     *      
-     *      Distribution Categories:
-     *      1. Holder Share: Distributed among DAV holders proportionally
-     *      2. Liquidity Share: Added to liquidity pools
-     *      3. Development Share: Sent to development wallets
-     *      4. Referral Share: Bonus for referrer (if valid referral code used)
-     *      5. State LP Share: Remainder allocated to STATE token liquidity
-     *      
-     *      Special Cases:
-     *      - Governance minting: Holder share = 0, redistributed to liquidity
-     *      - No holders: Holder share = 0, redistributed to liquidity
-     *      - Invalid referral: Referral share = 0
-     *      
-     *      Validation:
-     *      - All percentage checks done here (base shares ≤ 100%)
-     *      - Total allocation must equal input value (no loss/overflow)
-     *      - Double math check at end ensures correctness
-     *      
-     *      Security:
-     *      - View function (no state changes, no reentrancy risk)
-     *      - All arithmetic uses Solidity 0.8.20 overflow protection
-     *      - Final require ensures all funds accounted for
-     *      
      * @param value Total ETH amount to distribute
      * @param sender Address performing the mint
      * @param referralCode Referral code (if any)
@@ -352,6 +240,9 @@ library Distribution {
      * @return referralShare Amount allocated for referral bonus
      * @return stateLPShare Amount allocated for STATE liquidity (remainder)
      * @return referrer Address of referrer (address(0) if none)
+     * @custom:validation Input validation done in DavToken.sol; library validates percentages
+     * @custom:special Governance minting: holderShare = 0, redistributed to liquidity
+     * @custom:special No holders: holderShare = 0, redistributed to liquidity
      */
     function calculateETHDistribution(
         uint256 value,
@@ -445,17 +336,9 @@ library Distribution {
     
     /**
      * @notice Get total number of holders in distribution list
-     * @dev View function with consistency check
-     *      Verifies that array length matches counter (prevents desync bugs)
-     *      
-     *      Why This Check Exists:
-     *      - davHolders.length = actual array size
-     *      - davHoldersCount = manual counter
-     *      - If they differ, indicates a bug in add/remove logic
-     *      - This require catches such bugs before they cause issues
-     *      
      * @param state HolderState storage reference
      * @return Number of holders currently in distribution list
+     * @custom:consistency Fail-fast design: reverts if array length doesn't match counter
      */
     function _holderLength(
         HolderState storage state

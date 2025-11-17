@@ -3,47 +3,15 @@ pragma solidity ^0.8.20;
 
 /**
  * @title ReferralCodeLib
+ * @author State Protocol Team
  * @notice Library for generating and managing unique referral codes for DAV token system
- * @dev ARCHITECTURE NOTE - Library Access Control:
- *      This is a LIBRARY, not a standalone contract. Library functions can ONLY be called
- *      by contracts that import them (in this case, DavToken.sol).
- *      
- *      Use Case:
- *      - Generates unique, human-readable referral codes for users
- *      - Users share codes to earn 5% bonus on referrals' DAV mints
- *      - Codes are alphanumeric (excluding confusing characters: 0,O,1,I,l)
- *      - Default length: 12 characters for ~10^21 unique combinations
- *      
- *      Security Model:
- *      - Library functions are NOT directly callable by users on-chain
- *      - Only DavToken.sol can invoke these functions
- *      - DavToken.sol provides all access control
- *      - Randomness is sufficient for referral codes (not cryptographic security)
- *      
- *      Randomness Philosophy:
- *      - This is NOT a lottery, gambling, or high-value random number generator
- *      - Purpose: Generate unique codes that users share with friends
- *      - Even if predictable, users can set custom codes anyway
- *      - Collision resistance is the main goal, not cryptographic randomness
- *      
- *      Features:
- *      - Auto-generation: Users get codes on first mint/transfer
- *      - Custom codes: Users can set their own valid codes
- *      - Code rotation: Users can generate new codes if desired
- *      - Rate limiting: Optional cooldown between code changes
- *      - Collision handling: Up to 32 attempts to find unique code
- *      
- *      Gas Optimization:
- *      - Efficient character validation using byte ranges
- *      - Gas budget limits (500k soft limit)
- *      - Early exit on collision or low gas
- *      
- *      AUDIT CLARIFICATION:
- *      If you're auditing this library in isolation, understand:
- *      1. This is NOT cryptographic randomness (doesn't need to be)
- *      2. Users can set custom codes (predictability is not a security issue)
- *      3. All validation happens in DavToken.sol before calling library
- *      4. Purpose is uniqueness and UX, not security-critical randomness
+ * @dev Library functions called only by DavToken.sol (not directly callable by users).
+ * @custom:security Access control enforced in DavToken.sol
+ * @custom:use Users share codes to earn 5% bonus on referrals' DAV mints
+ * @custom:format Alphanumeric codes excluding confusing characters (0,O,1,I,l), length 4-32
+ * @custom:randomness Sufficient for uniqueness (not cryptographic), users can set custom codes anyway
+ * @custom:features Auto-generation, custom codes, code rotation, rate limiting, collision handling (32 attempts)
+ * @custom:gas 500k soft limit, early exit on collision or low gas
  */
 library ReferralCodeLib {
     
@@ -109,21 +77,11 @@ library ReferralCodeLib {
 
     /**
      * @notice Assigns a referral code to user if they don't have one
-     * @dev Called automatically by DavToken.sol on first mint or transfer
-     *      This ensures every user gets a code for sharing with friends
-     *      
-     *      Flow:
-     *      1. Check if user already has a code
-     *      2. If not, generate new unique code
-     *      3. Store code mapping both ways
-     *      4. Emit event
-     *      
-     *      Gas Cost:
-     *      - If user has code: ~2k gas (mapping read)
-     *      - If generating: ~50-100k gas (depends on collision attempts)
-     *      
      * @param data ReferralData storage reference from DavToken.sol
      * @param user Address to assign code to
+     * @custom:atomic Called from DavToken.sol with nonReentrant modifier
+     * @custom:collision 32 attempts to find unique code (54^12 = 618 quintillion possible codes)
+     * @custom:gas ~2k if user has code, ~50-100k if generating new code
      */
     function assignReferralCodeIfNeeded(
         ReferralData storage data,
@@ -139,41 +97,14 @@ library ReferralCodeLib {
 
     /**
      * @notice Generates a unique referral code for a user
-     * @dev Uses pseudo-random generation with collision handling
-     *      
-     *      Randomness Sources:
-     *      - User address (unique per user)
-     *      - User nonce (increments each generation)
-     *      - Previous block hash (changes every block)
-     *      - block.prevrandao (miner influence, but acceptable for referral codes)
-     *      - Contract address (constant but adds entropy)
-     *      - Chain ID (prevents cross-chain collisions)
-     *      
-     *      Why This Randomness is Sufficient:
-     *      1. Purpose: Generate unique, shareable codes (not cryptographic security)
-     *      2. Users can set custom codes anyway (predictability not an issue)
-     *      3. Even if miner influences, they can't steal others' codes
-     *      4. Collision handling provides 32 attempts to find unique code
-     *      5. 12-char alphanumeric space = 57^12 ≈ 10^21 combinations
-     *      
-     *      Collision Handling:
-     *      - Tries up to maxAttempts (default 32) different codes
-     *      - Each attempt varies the hash with iteration number
-     *      - Gas budget prevents infinite loops (500k soft limit)
-     *      - Reverts if no unique code found (extremely rare)
-     *      
-     *      Gas Management:
-     *      - 500k gas soft budget (adjustable)
-     *      - 15k gas safety floor per iteration
-     *      - Early exit if budget exceeded
-     *      
-     *      Rate Limiting:
-     *      - Optional cooldown between generations
-     *      - Prevents spam/abuse of code generation
-     *      
      * @param data ReferralData storage reference
      * @param user Address generating the code
      * @return code Generated unique referral code
+     * @custom:randomness Pseudo-random (not cryptographic) - sufficient for referral codes
+     * @custom:sources User address, nonce, blockhash, prevrandao, contract address, chain ID
+     * @custom:collision Up to 32 attempts with different seeds (12-char = 54^12 ≈ 10^21 combinations)
+     * @custom:gas 500k soft budget, 15k safety floor per iteration
+     * @custom:ratelimit Optional cooldown between generations to prevent spam
      */
     function generateReferralCode(
         ReferralData storage data,
@@ -222,8 +153,6 @@ library ReferralCodeLib {
 
     /**
      * @notice Internal helper to atomically check and set a referral code
-     * @dev Returns true if code was available and successfully set
-     *      
      * @param data ReferralData storage reference
      * @param code The code to attempt setting
      * @param user The user claiming this code
@@ -243,38 +172,18 @@ library ReferralCodeLib {
 
     /**
      * @notice Rotates (changes) a user's referral code to a freshly generated unique code
-     * @dev Allows users to get a new code if they don't like their current one
-     *      
-     *      Use Cases:
-     *      - User doesn't like their auto-generated code
-     *      - User wants a "luckier" code
-     *      - Code was shared publicly and user wants privacy
-     *      
-     *      Process:
-     *      1. Verify rate limit cooldown
-     *      2. Clean up old code mapping
-     *      3. Generate new unique code
-     *      4. Update all mappings
-     *      
-     *      Rate Limiting:
-     *      - Prevents spam/abuse
-     *      - Configurable cooldown period
-     *      
      * @param data ReferralData storage reference
      * @param user Address requesting code rotation
      * @return newCode The newly generated referral code
+     * @custom:ratelimit Enforced in generateReferralCode() call
+     * @custom:cleanup Old code mapping deleted if user owns it
+     * @custom:atomic Transaction rollback prevents partial state on failure
      */
     function rotateReferralCode(
         ReferralData storage data,
         address user
     ) internal returns (string memory newCode) {
         if (user == address(0)) revert ZeroAddress();
-        // Respect rate limiting window if configured
-        if (data.minSecondsBetweenCodes > 0) {
-            if (block.timestamp < data.lastCodeGeneration[user] + data.minSecondsBetweenCodes) {
-                revert RateLimited();
-            }
-        }
         // Clean up old mapping if any
         string memory old = data.userReferralCode[user];
         if (bytes(old).length != 0) {
@@ -290,27 +199,12 @@ library ReferralCodeLib {
 
     /**
      * @notice Allows user to set a custom referral code
-     * @dev Users can choose memorable codes if available
-     *      
-     *      Use Cases:
-     *      - User wants branded code (e.g., "CryptoJohn2024")
-     *      - User wants memorable code
-     *      - User wants code matching their social media handle
-     *      
-     *      Validation:
-     *      - Code must be 4-32 characters
-     *      - Must use allowed charset (alphanumeric, no confusing chars)
-     *      - Must be available (not taken by another user)
-     *      
-     *      Process:
-     *      1. Validate format and availability
-     *      2. Check rate limit
-     *      3. Clean up old code mapping
-     *      4. Set new code
-     *      
      * @param data ReferralData storage reference
      * @param user Address setting custom code
      * @param desiredCode Custom code string to set
+     * @custom:validation Format and availability checked before state changes
+     * @custom:atomic All operations in single transaction (all-or-nothing)
+     * @custom:cleanup Old code deleted only if user owns it
      */
     function setCustomReferralCode(
         ReferralData storage data,
@@ -348,30 +242,12 @@ library ReferralCodeLib {
 
     /**
      * @notice Converts bytes32 hash to alphanumeric string
-     * @dev Uses charset excluding confusing characters for better UX
-     *      
-     *      Charset (54 characters):
-     *      "23456789ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz"
-     *      
-     *      Breakdown:
-     *      - Numbers: 2-9 (8 chars, excluding 0,1)
-     *      - Uppercase: A-Z (23 chars, excluding I,L,O)
-     *      - Lowercase: a-z (23 chars, excluding i,l,o)
-     *      
-     *      Excluded for readability:
-     *      - 0,O,o look similar
-     *      - 1,I,i,L,l look similar
-     *      
-     *      Total combinations:
-     *      - 4 chars: 54^4 = 8.5 million
-     *      - 8 chars: 54^8 = 72.6 quadrillion
-     *      - 12 chars: 54^12 = 618 quintillion (default)
-     *      
-     *      Example codes: "aB3k9Rmn4Xp7", "Y2t8Qw5z", "Hj6N"
-     *      
      * @param hash Input hash to convert
      * @param length Desired output length
      * @return Alphanumeric string of specified length
+     * @custom:charset 54 chars - numbers 2-9, uppercase excluding I/L/O, lowercase excluding i/l/o
+     * @custom:validation Length validated at caller level in generateReferralCode()
+     * @custom:bias Modulo creates ~0.2% bias, acceptable for non-cryptographic codes
      */
     function toAlphanumericString(
         bytes32 hash,

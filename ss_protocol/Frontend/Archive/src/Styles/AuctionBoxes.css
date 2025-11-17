@@ -1,0 +1,299 @@
+.auction-boxes {
+  margin-top: 0.4rem; /* slightly smaller spacing */
+  margin-bottom: 0.6rem; /* slightly smaller spacing */
+  color: #ffffff;
+  width: 100%;
+  max-width: 100vw;
+  display: flex;
+  justify-content: center !important; /* center inner row horizontally */
+  align-items: center !important;
+  margin-left: auto !important;   /* center horizontally */
+  margin-right: auto !important;  /* center horizontally */
+  /* Removed padding-left and padding-right */
+  overflow-x: hidden; /* ensure no horizontal scrollbar on page */
+}
+
+/* Neutralize Bootstrap row's negative margins inside auction container */
+.auction-boxes .row {
+  --bs-gutter-x: 0;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+}
+
+.auction-frame {
+  border: 1px solid #ffffff26; /* match .card border */
+  border-radius: 10px; /* match above boxes */
+  padding: 8px 10px; /* slightly smaller */
+  background: #212529; /* match card bg */
+  width: 100%; /* ensure frame fills the column width */
+  box-sizing: border-box; /* include border/padding in computed width */
+}
+
+
+.auction-frame.reverse {
+  border-color: rgba(255, 64, 129, 0.3); /* subtle accent only */
+  background: #212529; /* keep consistent card bg */
+  border-radius: 10px; /* keep same rounding in reverse */
+  width: 100%; /* ensure reverse frame uses full column width like normal */
+  box-sizing: border-box;
+}
+
+/* normal mode keeps base theme */
+
+.auction-boxes.reverse {
+  background: transparent; /* align with standard card sections */
+  border: none;
+  border-radius: 18px;
+  padding: 10px 12px; /* slightly smaller */
+}
+
+/* Ensure scaled content isn't clipped by column wrapper */
+.auction-col, .auction-col.reverse-narrow {
+  overflow: visible;
+  width: 100%;
+  max-width: 600px;
+  transform: none; /* avoid shifting that causes overflow */
+  margin-left: auto !important;
+  margin-right: auto !important;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* Make reverse auction box narrower by 50% while keeping same centering */
+.auction-col.reverse-narrow {
+  width: 100%;
+  max-width: 600px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.auction-header {
+  font-size: 14px; /* slightly smaller */
+  font-weight: 600;
+  margin-bottom: 6px;
+  margin-left: 2px;
+}
+
+.auction-row {
+  display: flex;
+  align-items: center;
+  gap: 8px; /* a bit tighter */
+  margin: 6px 0; /* a bit tighter */
+  /* Match Mint card border style */
+  border: 1px solid #ffffff26;
+  border-radius: 10px;
+  background-color: #212529; /* match input/card background */
+  padding: 6px 8px; /* smaller */
+  height: 53px; /* fixed height (+10%) */
+  position: relative; /* for legend positioning */
+  /* Allow the floating .row-legend to sit above the border */
+  overflow: visible;
+}
+
+/* smaller variant specifically for compact rows */
+.auction-row.small {
+  padding: 5px 8px;
+  height: 44px; /* fixed height (+10%) */
+}
+
+.auction-card {
+  background: transparent; /* inner content only, boundary is on row */
+  border: none;
+  color: #fff;
+  padding: 0; /* spacing handled by row */
+  border-radius: 10px;
+  width: 100%;
+  grid-column: 1 / 2;
+  display: flex;            /* keep content vertically centered */
+  align-items: center;      /* center text in fixed-height rows */
+  height: 100%;
+}
+
+.auction-card-title {
+  font-size: 19px; /* slightly smaller */
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Floating legend label inside box boundary */
+.row-legend {
+  position: absolute;
+  top: -10px; /* slight nudge for fixed-height rows */
+  left: 10px; /* slight nudge */
+  background-color: #212529; /* same as box background */
+  padding: 0 5px;
+  font-size: 12px; /* align closer to small */
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.6); /* closer to detailText opacity */
+  /* Use natural casing to match dynamic text content */
+  text-transform: none;
+  border-radius: 6px;
+}
+
+.auction-card-sub {
+  /* Match Mint button text size (~.btn-sm => 0.875rem) */
+  font-size: 0.875rem;
+  /* Use natural casing so copy matches what's shown */
+  text-transform: none;
+  font-weight: 700;
+  opacity: 0.5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Increase specificity to override global .detailText if applied */
+.auction-card-sub.detailText {
+  font-size: 0.875rem;
+  text-transform: none;
+}
+
+.auction-pill {
+  /* Use Bootstrap/InfoCards .btn-primary for colors */
+  border: none;
+  border-radius: 10px; /* match above boxes */
+  padding: 6px 14px; /* slightly larger to fit fixed rows */
+  font-weight: 600;
+  /* Keep text on a single line and center it */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  /* Allow the button to expand for longer labels like "Ratio Swap" */
+  min-width: 110px;
+}
+
+/* Hover and disabled states inherit from .btn-primary */
+
+.auction-pill:disabled {
+  opacity: 0.65; /* match Bootstrap disabled button appearance */
+  pointer-events: none;
+}
+
+.auction-footer {
+  margin-top: 2px; /* tighter spacing */
+  gap: 6px;
+}
+
+/* Container that holds a bordered box plus an external action button */
+.auction-row-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 6px 0;
+}
+
+/* Tighter spacing inside the fixed-height normal card */
+.auction-frame.normal-fixed .auction-row-stack {
+  margin: 4px 0;
+  gap: 4px;
+}
+
+.auction-row-action {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 44px; /* keep action area consistent */
+}
+
+/* Inside fixed-height normal card, let buttons control height exactly */
+.auction-frame.normal-fixed .auction-row-action {
+  min-height: 0;
+}
+
+/* Inline layout: box + button in one row */
+/* Inline layout: box + button in one row */
+.auction-row-inline {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 10px;
+  margin: 6px 0;
+}
+
+@media (max-width: 767px) {
+  .auction-row-action {
+    justify-content: center;
+  }
+  .auction-row-action .auction-pill {
+    width: 100%;
+  }
+
+  .auction-row-inline {
+    grid-template-columns: 1fr; /* stack on small screens */
+  }
+}
+
+.footer-left {
+  flex: 0 0 auto;
+  min-width: 0; /* allow content to shrink */
+}
+
+/* Allow widened frame to render beyond the normal column width while staying centered */
+.auction-col {
+  overflow: visible;
+}
+
+/* Wider auction column on md+ screens */
+@media (min-width: 768px) {
+  .auction-row {
+    display: grid;
+    grid-template-columns: 1fr; /* only content inside the bordered box now */
+    align-items: center;
+    gap: 8px;
+    margin: 6px 0;
+  }
+
+}
+
+/* =============================
+   Normal Auction fixed layout
+   ============================= */
+/* Fix the overall Normal Auction card size to avoid dynamic resizing */
+.auction-frame.normal-fixed {
+  /* Match Dav Mint card feel: width > height */
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between; /* keep header, steps, footer spaced */
+  box-sizing: border-box;
+  overflow: hidden; /* avoid internal scrollbars */
+  max-width: 510px;             /* align to single Mint card column width */
+  margin-left: auto;            /* center the card */
+  margin-right: auto;
+  padding-top: 6px;             /* tighter padding to avoid clipping */
+  padding-bottom: 6px;
+  gap: 8px;
+}
+
+/* Two-line pill button with title + dynamic subtitle inside the button */
+.auction-step-btn {
+  width: 100%;
+  height: 56px;             /* tighter to fit within 260px card */
+  border-radius: 20px;       /* rounded pill look */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  line-height: 1.1;
+  gap: 2px;
+  padding: 0 16px;          /* breathing room for long text */
+  white-space: nowrap;       /* prevent multi-line growth */
+  overflow: hidden;          /* keep size fixed */
+  text-overflow: ellipsis;   /* truncate if too long */
+}
+
+.auction-step-title {
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.auction-step-sub {
+  font-size: 12px;
+  opacity: 0.85;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

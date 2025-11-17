@@ -1,6 +1,5 @@
 import { parseUnits } from "ethers";
 import { useState, useEffect, useContext, useRef } from "react";
-import TokenSearchModal from "./TokenSearchModal";
 import { ethers } from "ethers";
 import { ContractContext } from "../../Functions/ContractInitialize";
 import { useAllTokens } from "./Tokens";
@@ -10,7 +9,7 @@ import sonic from "../../assets/S_token.svg";
 import { useAccount, useChainId } from "wagmi";
 import { PULSEX_ROUTER_ADDRESS, PULSEX_ROUTER_ABI, notifyError, ERC20_ABI, notifySuccess } from '../../Constants/Constants';
 import useSwapData from "./useSwapData";
-import toast from "react-hot-toast";
+// import toast from "react-hot-toast";
 import useTokenBalances from "./UserTokenBalances";
 import { TokensDetails } from "../../data/TokensDetails";
 import { useSwapContract } from "../../Functions/SwapContractFunctions";
@@ -37,8 +36,7 @@ const SwapComponent = ({ preselectToken }) => {
   const [pairToken, setPairToken] = useState(null);
   const [amountIn, setAmountIn] = useState("");
   const [isSwapping, setIsSwapping] = useState(false);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [modalType, setModalType] = useState(null);
+  // Removed token selection modal per request
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [needsApproval, setNeedsApproval] = useState(false);
   const [isApproving, setIsApproving] = useState(false);
@@ -46,6 +44,9 @@ const SwapComponent = ({ preselectToken }) => {
   const [confirmedAmountIn, setConfirmedAmountIn] = useState("");
   const [confirmedAmountOut, setConfirmedAmountOut] = useState("");
   const [insufficientBalance, setInsufficientBalance] = useState(false);
+  const [ratioOutPerIn, setRatioOutPerIn] = useState("");
+  const ratioTimerRef = useRef(null);
+  const isActiveEntry = (amountIn && amountIn.trim() !== "");
 
 
   const {
@@ -82,19 +83,68 @@ const SwapComponent = ({ preselectToken }) => {
     }
   }, [amountIn, tokenInBalance]);
 
+  // Initialize default tokens once, or when preselectToken changes.
+  const initializedRef = useRef(false);
+  const lastPreselectRef = useRef(preselectToken);
+  const manualChangeRef = useRef(false);
+
   useEffect(() => {
-    if (preselectToken && TOKENS[preselectToken]) {
-      setPairToken(preselectToken);
-      setTokenIn(preselectToken);
-      setTokenOut("STATE");
+    const preselectChanged = lastPreselectRef.current !== preselectToken;
+    if (preselectChanged) {
+      lastPreselectRef.current = preselectToken;
+      manualChangeRef.current = false; // allow re-init on new preselect
+      initializedRef.current = false;
+    }
+
+    if (manualChangeRef.current && initializedRef.current) {
+      // user manually swapped; don't override their choice
       return;
     }
-    if (chainId && nativeNames[chainId]) {
-      setTokenOut(nativeNames[chainId]);
-    } else {
-      setTokenOut("STATE");
+
+    if (!initializedRef.current) {
+      if (preselectToken && TOKENS[preselectToken]) {
+        setPairToken(preselectToken);
+        setTokenIn(preselectToken);
+        setTokenOut("STATE");
+        initializedRef.current = true;
+        return;
+      }
+      if (chainId && nativeNames[chainId]) {
+        setTokenOut(nativeNames[chainId]);
+      } else {
+        setTokenOut("STATE");
+      }
+      initializedRef.current = true;
     }
   }, [chainId, preselectToken, TOKENS]);
+
+  // Periodically fetch "current ratio" (1 tokenIn -> X tokenOut) every 5 seconds
+  const refreshRatio = async () => {
+    try {
+      if (!tokenIn || !tokenOut || !TOKENS[tokenIn] || !TOKENS[tokenOut]) return;
+      // Use direct router quote for 1 unit (uses 18-decimals in getQuoteDirect internally)
+      const rawOut = await getQuoteDirect("1", tokenIn, tokenOut);
+      const out = Number(ethers.formatUnits(rawOut, TOKENS[tokenOut].decimals));
+      if (!isNaN(out) && isFinite(out)) setRatioOutPerIn(out.toString());
+    } catch (e) {
+      // keep previous ratio on error
+      console.warn("ratio refresh failed", e);
+    }
+  };
+
+  useEffect(() => {
+    // clear any existing timer
+    if (ratioTimerRef.current) {
+      clearInterval(ratioTimerRef.current);
+    }
+    // immediately fetch once
+    refreshRatio();
+    // then every 5s
+    ratioTimerRef.current = setInterval(refreshRatio, 5000);
+    return () => {
+      if (ratioTimerRef.current) clearInterval(ratioTimerRef.current);
+    };
+  }, [tokenIn, tokenOut, TOKENS]);
 
   const SPECIAL_TOKEN_LOGOS = {
     STATE: state,
@@ -162,6 +212,26 @@ const SwapComponent = ({ preselectToken }) => {
       setIsApproving(false);
     }
   };
+  
+  // Swap tokenIn and tokenOut deterministically
+  const handleInterchange = () => {
+    try {
+      const prevIn = tokenIn;
+      const prevOut = tokenOut;
+      if (!prevIn || !prevOut) return;
+      // Swap directions
+      setTokenIn(prevOut);
+      setTokenOut(prevIn);
+      // Keep track of the non-STATE token for quick toggles
+      const nextPair = prevOut !== "STATE" ? prevOut : prevIn;
+      setPairToken(nextPair);
+      // Reset input state to avoid stale quotes
+      // Clear amount to force a fresh quote; user can re-enter
+      setAmountIn("");
+      setInsufficientBalance(false);
+      manualChangeRef.current = true;
+    } catch {}
+  };
   const getTokenLogo = (symbol) => {
     if (!symbol || !TOKENS[symbol]) {
       return <span>Loading...</span>;
@@ -179,7 +249,8 @@ const SwapComponent = ({ preselectToken }) => {
     if (
       TOKENS[symbol]?.image &&
       (TOKENS[symbol].image.startsWith("http") ||
-        TOKENS[symbol].image.startsWith("/"))
+        TOKENS[symbol].image.startsWith("/") ||
+        TOKENS[symbol].image.startsWith("data:image/"))
     ) {
       return (
         <img
@@ -202,29 +273,7 @@ const SwapComponent = ({ preselectToken }) => {
       />
     );
   };
-  const openModal = (type) => {
-    setModalType(type);
-    setIsModalOpen(true);
-  };
-
-  const closeModal = () => {
-    setIsModalOpen(false);
-    setModalType(null);
-  };
-
-  const selectToken = (key) => {
-    if (modalType === "in") {
-      if (key === "STATE") {
-        setTokenIn("STATE");
-        if (pairToken) setTokenOut(pairToken);
-      } else {
-        setPairToken(key);
-        setTokenIn(key);
-        setTokenOut("STATE");
-      }
-    }
-    closeModal();
-  };
+  // Modal open/close and selection removed; only STATE and auction token are used
 
   const handleSwap = async () => {
     if (!signer) {
@@ -315,8 +364,16 @@ const SwapComponent = ({ preselectToken }) => {
 
   const getDisplaySymbol = (symbol) => {
     if (!symbol) return '';
-    const singleLine = symbol.replace(/\s+/g, '');
+    // Prefer full display name from TOKENS if available
+    const fullName = TOKENS[symbol]?.displayName || TOKENS[symbol]?.name || symbol;
+    const singleLine = fullName.replace(/\s+/g, '');
     return singleLine.length > 6 ? singleLine.slice(0, 6) + '..' : singleLine;
+  };
+
+  // Full, non-truncated token display for labels and ratios
+  const getFullTokenName = (symbolKey) => {
+    if (!symbolKey) return '';
+    return TOKENS[symbolKey]?.displayName || TOKENS[symbolKey]?.name || TOKENS[symbolKey]?.symbol || symbolKey;
   };
 
   // Helper to check if amount exceeds balance
@@ -370,251 +427,125 @@ const SwapComponent = ({ preselectToken }) => {
     }
   };
 
+  // Single-box layout (Uniswap-like)
   return (
     <>
-      {/* Inline transaction progress bar */}
       <div className="container mt-4">
-        <div className="row g-4 d-flex align-items-stretch pb-1">
-          <div className="col-md-4 p-0 m-2 cards">
-            <div className="card bg-dark text-light border-light p-3 d-flex w-100" style={{ minHeight: "260px" }}>
-              <label className="detailText text-center small mb-1 font-weight-normal w-100">YOU PAY</label>
-              <div className="d-flex flex-column align-items-center gap-2" style={{ position: "relative" }}>
-                {/* Input + Swap button in one row */}
-                <div className="position-relative" style={{ maxWidth: "80%", width: "100%" }}>
-                  <input
-                    type="text"
-                    className="form-control pe-5" // padding-end so text doesn't overlap with icon
-                    value={amountIn}
-                    onChange={(e) => handleInputChange(e.target.value)}
-                    placeholder="0.0"
-                    style={{
-                      boxShadow: "none",
-                      "--placeholder-color": "#6c757d",
-                      backgroundColor: (isApproving || isSwapping) ? "#343a40" : undefined,
-                      borderColor: insufficientBalance ? "#dc3545" : undefined,
-                    }}
-                    disabled={isApproving || isSwapping}
-                  />
-
-                  {/* Swap Button inside input */}
-                  <button
-                    className="btn btn-outline-light rounded-circle position-absolute"
-                    style={{
-                      width: "25px",
-                      height: "25px",
-                      top: "50%",
-                      right: "10px",
-                      transform: "translateY(-50%)",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      padding: 0,
-                    }}
-                    onClick={() => {
-                      if (pairToken) {
-                        setTokenIn((curr) => (curr === "STATE" ? pairToken : "STATE"));
-                        setTokenOut((curr) => (curr === "STATE" ? pairToken : "STATE"));
-                      } else {
-                        const native = nativeNames[chainId] || "STATE";
-                        setTokenIn((curr) => (curr === "STATE" ? native : "STATE"));
-                        setTokenOut((curr) => (curr === "STATE" ? native : "STATE"));
-                      }
-                      setAmountIn("");
-                      setInsufficientBalance(false);
-                    }}
-                    disabled={isApproving || isSwapping}
-                  >
-                    <i className="bi bi-arrow-left-right" style={{ fontSize: "1rem" }}></i>
-                  </button>
-                </div>
-
-
-                {inputUsdValue && (
-                  <small
-                    className="text-secondary"
-                    style={{
-                      alignSelf: "flex-start",
-                      marginLeft: "10%", // aligns with input box
-                      fontSize: "0.7rem"
-                    }}
-                  >
-                    {inputUsdValue}
-                  </small>
-                )}
-                <div className="d-flex align-items-center gap-1">
-                  <button
-                    className="d-flex align-items-center justify-content-between gap-2 px-2 token-select-btn"
-                    onClick={() => openModal("in")}
-                    disabled={isApproving || isSwapping}
-                  >
-                    <span className="d-flex align-items-center gap-2">
-                      {getTokenLogo(tokenIn)}
-                      <span style={{ fontWeight: 500, fontSize: "1rem" }}>
-                        {getDisplaySymbol(TOKENS[tokenIn]?.symbol || tokenIn)}
-                      </span>
-                    </span>
-                    <span className="ms-2 d-flex align-items-center">
-                      <i
-                        className="bi bi-chevron-down"
-                        style={{ fontSize: "1rem" }}
-                      ></i>
-                    </span>
-                  </button>
-                </div>
-              </div>
-              <div
-                className="d-flex justify-content-center align-items-center mb-2 mt-1"
-                style={{ fontSize: "0.7rem" }}
-              >
-                <span
-                  className="text-secondary small fw-normal ms-1"
-                  style={{
-                    cursor: (isApproving || isSwapping) ? "default" : "pointer",
-                    opacity: (isApproving || isSwapping) ? "0.6" : "1"
-                  }}
-                  onClick={(isApproving || isSwapping) ? undefined : () => setAmountIn(getMaxAmount())}
-                >
-                  Bal: {tokenInBalance ? `${parseFloat(tokenInBalance).toFixed(2)}` : "-"}
+        <div className="dex-swap-card bg-dark text-light border-light p-3 rounded-4" style={{ maxWidth: "760px", margin: "0 auto" }}>
+          {/* Top panel: Sell (tokenIn) */}
+          <div className="swap-panel p-3" style={{ background: "#0f0f10", borderRadius: "14px", border: "1px solid rgba(255,255,255,0.08)" }}>
+            <div className="d-flex align-items-center justify-content-between mb-2" style={{ flexWrap: 'wrap', rowGap: '6px' }}>
+              <span className="text-light" style={{ fontWeight: 600, letterSpacing: '0.2px', fontSize: '1.1rem' }}>Sell</span>
+              <div className="d-inline-flex align-items-center gap-2 px-3 py-1 rounded-3" style={{ border: '1px solid rgba(255,255,255,0.08)', maxWidth: '75%' }}>
+                {getTokenLogo(tokenIn)}
+                <span style={{ fontWeight: 600, fontSize: "1rem", whiteSpace: 'normal', overflowWrap: 'anywhere' }}>
+                  {TOKENS[tokenIn]?.displayName || TOKENS[tokenIn]?.name || tokenIn}
                 </span>
               </div>
-
+            </div>
+            <div className="d-flex align-items-end justify-content-between gap-3">
+              <input
+                type="text"
+                className="form-control form-control-lg bg-transparent text-light"
+                value={amountIn}
+                onChange={(e) => handleInputChange(e.target.value)}
+                placeholder="0.0"
+                style={{
+                  border: `1px solid ${insufficientBalance ? "#dc3545" : (isActiveEntry ? "#ffffff" : "rgba(255,255,255,0.5)")}`,
+                  boxShadow: "none",
+                  "--placeholder-color": "#6c757d",
+                  backgroundColor: (isApproving || isSwapping) ? "#1e1e22" : "transparent",
+                  fontSize: "1.25rem"
+                }}
+                disabled={isApproving || isSwapping}
+              />
+            </div>
+            <div className="d-flex justify-content-between mt-2">
+              <small className="text-light" style={{ fontWeight: 500, fontSize: '0.9rem' }}>
+                {ratioOutPerIn
+                  ? `1 ${getFullTokenName(tokenIn)} ≈ ${Number(ratioOutPerIn).toFixed(6)} ${getFullTokenName(tokenOut)}`
+                  : "Fetching ratio..."}
+              </small>
+              <small
+                className="text-light"
+                style={{ cursor: (isApproving || isSwapping) ? "default" : "pointer", opacity: (isApproving || isSwapping) ? 0.7 : 1, fontWeight: 500, fontSize: '0.9rem' }}
+                onClick={(isApproving || isSwapping) ? undefined : () => setAmountIn(getMaxAmount())}
+              >
+                Bal: {tokenInBalance ? `${parseFloat(tokenInBalance).toFixed(2)}` : "-"}
+              </small>
             </div>
           </div>
 
-          {/* Second Card: To Token Selection */}
-          <div className="col-md-4 p-0 m-2 cards">
-            <div className="card bg-dark text-light border-light p-3 d-flex w-100">
-
-              <label className="detailText text-center small mb-1 font-weight-normal w-100">YOU RECIEVE</label>
-              <div className="d-flex flex-column align-items-center gap-2" style={{ position: 'relative' }}>
-                <input
-                  type="text"
-                  className="form-control font-weight-bold"
-                  placeholder="0.0"
-                  value={isLoading ? "Fetching..." : amountOut}
-                  readOnly
-                  style={{ fontSize: "1rem", width: "80%", background: "#343a40", "--placeholder-color": "#6c757d" }}
-                />
-                {outputUsdValue && (
-                  <div
-                    className="d-flex align-items-start gap-2 mb-2"
-                    style={{
-                      fontSize: "0.8rem",
-                      alignSelf: "flex-start",
-                      marginLeft: "10%", // aligns with centered input edges
-                    }}
-                  >
-                    <small className="text-secondary">{outputUsdValue}</small>
-                  </div>
-                )}
-
-                <div className="d-flex align-items-center gap-1">
-                  <button
-                    className="d-flex align-items-center justify-content-between gap-2 px-2 token-select-btn"
-                    disabled
-                  >
-                    <span className="d-flex align-items-center gap-2">
-                      {getTokenLogo(tokenOut)}
-                      <span style={{ fontWeight: 500, fontSize: "1rem" }}>
-                        {getDisplaySymbol(TOKENS[tokenOut]?.symbol || tokenOut)}
-                      </span>
-                    </span>
-                    <span className="ms-2 d-flex align-items-center">
-                      <i
-                        className="bi bi-chevron-down"
-                        style={{ fontSize: "1rem" }}
-                      ></i>
-                    </span>
-                  </button>
-                </div>
-              </div>
-              {/* <TxProgressModal isOpen={isSwapping} txStatus={txStatus}
-                steps={SwappingSteps} /> */}
-
-              <div className="d-flex justify-content-center align-items-center mt-3">
-                <div className="position-relative">
-
-                  <button
-                    className="btn btn-primary rounded-pill py-2"
-                    onClick={handleSwap}
-                    disabled={!quoteData || isSwapping || insufficientBalance}
-                    style={{
-                      minWidth: "170px",
-                      width: "auto",
-                      fontSize: "16px",
-                      padding: "10px 20px",
-                      fontWeight: 400,
-                      height: "40px",
-                      textAlign: "center",
-                      whiteSpace: "nowrap"
-                    }}
-                  >
-                    {insufficientBalance ? (
-                      `Insufficient ${TOKENS[tokenIn]?.symbol || tokenIn}`
-                    ) : (
-                      "SWAP"
-                    )}
-                  </button>
-
-                </div>
-              </div>
-
-            </div>
+          {/* Swap button between panels */}
+          <div className="d-flex justify-content-center" style={{ margin: "-16px 0" }}>
+            <button
+              className="swap-interchange-btn btn btn-dark"
+              onClick={handleInterchange}
+              disabled={isApproving || isSwapping}
+              style={{
+                width: "44px",
+                height: "44px",
+                borderRadius: "12px",
+                border: "1px solid rgba(255,255,255,0.12)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                boxShadow: "0 2px 10px rgba(0,0,0,0.4)",
+              }}
+              title="Switch direction"
+            >
+              <i className="bi bi-arrow-down" style={{ fontSize: "1.1rem" }}></i>
+            </button>
           </div>
 
-          {/* Third Card: Swap Button and Details Section */}
-          <div className="col-md-4 p-0 m-2 cards">
-            <div className="card bg-dark text-light border-light p-3 d-flex w-100">
-              <div className="carddetaildiv uppercase d-flex justify-content-between align-items-center">
-                <div className="carddetails2">
-                  <h6 className="detailText">Details</h6>
-                  <p className="mb-1">
-                    <span className="detailText">Route - </span>
-                    <span className="second-span-fontsize">{chainId == 369 ? "PulseXRouter02" : "SushiSwap API"} </span>
-                  </p>
-                  {/* <p className="mb-1">
-                    <span className="detailText">WITHDRAW PLS INDEX FUND - </span>
-                    <button
-                      className="btn btn-sm text-light p-0"
-                      style={{ textDecoration: "none", fontSize: "13px", fontWeight: "700" }}
-                      onClick={handleCheckClick}
-                      disabled={isApproving || isSwapping}
-                      title="Reset to default tokens"
-                    >
-                      CHECK
-                    </button>
-
-                  </p> */}
-                  <div className="d-flex justify-content-start align-items-center ">
-                    <button
-                      className="btn detailText btn-link text-light  p-0"
-                      style={{ textDecoration: "none", fontSize: "13px", fontWeight: "700" }}
-                      onClick={() => {
-                        setTokenIn("STATE");
-                        setTokenOut(nativeNames[chainId]);
-                        setAmountIn("");
-                      }}
-                      disabled={isApproving || isSwapping}
-                      title="Reset to default tokens"
-                    >
-                      Refresh <i className="bi bi-arrow-clockwise"></i>
-
-                    </button>
-                  </div>
-                </div>
-
+          {/* Bottom panel: Buy (tokenOut) */}
+          <div className="swap-panel p-3 mt-0" style={{ background: "#0f0f10", borderRadius: "14px", border: "1px solid rgba(255,255,255,0.08)" }}>
+            <div className="d-flex align-items-center justify-content-between mb-2" style={{ flexWrap: 'wrap', rowGap: '6px' }}>
+              <span className="text-light" style={{ fontWeight: 600, letterSpacing: '0.2px', fontSize: '1.1rem' }}>Buy</span>
+              <div className="d-inline-flex align-items-center gap-2 px-3 py-1 rounded-3" style={{ border: '1px solid rgba(255,255,255,0.08)', maxWidth: '75%' }}>
+                {getTokenLogo(tokenOut)}
+                <span style={{ fontWeight: 600, fontSize: "1rem", whiteSpace: 'normal', overflowWrap: 'anywhere' }}>
+                  {TOKENS[tokenOut]?.displayName || TOKENS[tokenOut]?.name || tokenOut}
+                </span>
               </div>
             </div>
-          </div>
-
-          {isModalOpen && (
-            <TokenSearchModal
-              tokens={TOKENS}
-              excludeToken={modalType === "in" ? tokenOut : tokenIn}
-              onSelect={selectToken}
-              onClose={closeModal}
+            <input
+              type="text"
+              className="form-control form-control-lg bg-transparent text-light"
+              placeholder="0.0"
+              value={isLoading ? "Fetching..." : amountOut}
+              readOnly
+              style={{
+                border: `1px solid ${isActiveEntry ? "#ffffff" : "rgba(255,255,255,0.5)"}`,
+                background: "#1b1b1f",
+                fontSize: "1.25rem"
+              }}
             />
-          )}
+            <div className="mt-2 text-start">
+              <small className="text-light" style={{ fontWeight: 500, fontSize: '0.9rem' }}>
+                {ratioOutPerIn && Number(ratioOutPerIn) > 0
+                  ? `1 ${getFullTokenName(tokenOut)} ≈ ${(1 / Number(ratioOutPerIn)).toFixed(6)} ${getFullTokenName(tokenIn)}`
+                  : "Fetching ratio..."}
+              </small>
+            </div>
+          </div>
+
+          {/* Primary CTA */}
+          <div className="mt-3">
+            <button
+              className="btn btn-primary rounded-pill w-100 py-3"
+              onClick={handleSwap}
+              disabled={!quoteData || isSwapping || insufficientBalance}
+              style={{ fontSize: "16px", fontWeight: 600 }}
+            >
+              {insufficientBalance ? (
+                `Insufficient ${TOKENS[tokenIn]?.symbol || tokenIn}`
+              ) : (
+                "Swap"
+              )}
+            </button>
+          </div>
+
         </div>
       </div>
     </>

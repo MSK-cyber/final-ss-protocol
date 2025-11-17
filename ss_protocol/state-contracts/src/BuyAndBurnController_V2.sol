@@ -89,25 +89,19 @@ interface ISTATE {
  *    c. Swap WPLS → STATE
  *    d. Add liquidity and burn LP tokens permanently
  * 
- * SECURITY NOTES:
- * ==============
- * - All external functions are onlyOwner (governance-controlled)
- * - Uses nonReentrant on all state-changing functions
- * - 5% maximum slippage protection (MAX_SLIPPAGE_BPS = 500)
- * - Emergency rescue functions for stuck tokens/PLS
- * - LP tokens are burned to 0x...dEaD address (permanent removal)
- * 
- * AUDIT NOTES:
- * ===========
- * - Finding #1 (Reentrancy): FALSE POSITIVE - nonReentrant modifier present
- * - Finding #2 (Unbounded Loop): FALSE POSITIVE - hard-capped at 10 iterations
- * - Finding #3 (Zero Address): FALSE POSITIVE - all checks present in constructor
- * - Finding #4 (Unchecked Returns): FALSE POSITIVE - using SafeERC20
- * - Finding #5 (Transfer Source): FALSE POSITIVE - SWAP_VAULT and SWAP were same address, now consolidated to SWAP_V3
- * - Finding #6-10 (Optimizations): ACKNOWLEDGED - minor gas optimizations, not security issues
+ * @custom:security All external functions are governance-controlled (onlyGovernance modifier)
+ * @custom:security Uses nonReentrant on all state-changing functions
+ * @custom:security 5% maximum slippage protection (MAX_SLIPPAGE_BPS = 500)
+ * @custom:lp-burn LP tokens are permanently burned to 0x...dEaD address
  */
 contract BuyAndBurnController_V2 is Ownable, ReentrancyGuard {
     using SafeERC20 for IERC20;
+    
+    // ============ State Variables ============
+    
+    /// @notice Governance address (access control)
+    /// @dev All protocol operations are governance-controlled
+    address public governance;
     
     // ============ Immutable Core Addresses ============
     
@@ -132,6 +126,10 @@ contract BuyAndBurnController_V2 is Ownable, ReentrancyGuard {
     /// @dev Consolidated from previous SWAP_VAULT + SWAP (both pointed to same address)
     address public immutable SWAP_V3;
     
+    /// @notice AuctionAdmin contract address
+    /// @dev Can call governance coordination functions like ownership transfer
+    address public immutable auctionAdmin;
+    
     // ============ Pool Management ============
     
     /// @notice STATE/WPLS liquidity pool address
@@ -147,7 +145,6 @@ contract BuyAndBurnController_V2 is Ownable, ReentrancyGuard {
     
     /// @notice Maximum slippage tolerance in basis points (500 = 5%)
     /// @dev Applied to all DEX operations for front-running protection
-    /// @dev Audit Note: Addresses Finding #10 - front-running risk mitigation
     uint256 private constant MAX_SLIPPAGE_BPS = 500;
     
     // ============ Events ============
@@ -189,34 +186,66 @@ contract BuyAndBurnController_V2 is Ownable, ReentrancyGuard {
     /// @param liquidityBurned Amount of LP tokens minted and immediately burned
     event LiquidityAdded(address indexed pool, uint256 stateAmount, uint256 wplsAmount, uint256 liquidityBurned);
     
+    /// @notice Emitted when governance address is transferred
+    /// @param previousGovernance Address of the previous governance
+    /// @param newGovernance Address of the new governance
+    event GovernanceTransferred(address indexed previousGovernance, address indexed newGovernance);
+    
     /**
      * @notice Initializes the BuyAndBurnController with core protocol addresses
      * @dev All addresses are immutable after deployment for security
-     * @dev Audit Note (Finding #3): All zero address checks are present
      * @param _state STATE token contract address
      * @param _wpls WPLS (Wrapped PLS) contract address
      * @param _router PulseX Router contract address for DEX operations
      * @param _factory PulseX Factory contract address for pool management
      * @param _swapV3 SWAP_V3 (AuctionSwap) contract address - vault source for STATE tokens
+     * @param _auctionAdmin AuctionAdmin contract address (governance coordinator)
+     * @param _governance Governance address (access control)
      */
     constructor(
         address _state,
         address _wpls,
         address _router,
         address _factory,
-        address _swapV3
+        address _swapV3,
+        address _auctionAdmin,
+        address _governance
     ) Ownable(msg.sender) {
         require(_state != address(0), "Invalid STATE");
         require(_wpls != address(0), "Invalid WPLS");
         require(_router != address(0), "Invalid router");
         require(_factory != address(0), "Invalid factory");
         require(_swapV3 != address(0), "Invalid SWAP_V3");
+        require(_auctionAdmin != address(0), "Invalid admin");
+        require(_governance != address(0), "Invalid governance");
         
         STATE = _state;
         WPLS = _wpls;
         ROUTER = _router;
         FACTORY = _factory;
         SWAP_V3 = _swapV3;
+        auctionAdmin = _auctionAdmin;
+        governance = _governance;
+        renounceOwnership();
+    }
+    
+    /// @notice Modifier for governance-only functions
+    modifier onlyGovernance() {
+        require(msg.sender == governance, "Only governance");
+        _;
+    }
+    
+    /// @notice Transfer governance via AuctionAdmin (for centralized governance transfer)
+    /// @dev Only callable by AuctionAdmin during protocol-wide governance transfer
+    /// @param newGovernance Address of the new governance
+    function transferGovernanceByAdmin(address newGovernance) external {
+        require(msg.sender == auctionAdmin, "Only admin");
+        require(newGovernance != address(0), "Invalid governance");
+        
+        address previousGovernance = governance;
+        governance = newGovernance;
+        
+        emit GovernanceTransferred(previousGovernance, newGovernance);
     }
     
     /**
@@ -224,10 +253,10 @@ contract BuyAndBurnController_V2 is Ownable, ReentrancyGuard {
      * @dev Alternative to createPoolOneClick() if pool already exists on-chain
      * @dev Only callable once - cannot change pool after initialization
      * @param poolAddress Address of the existing STATE/WPLS pool
-     * @custom:security onlyOwner - governance-controlled
+     * @custom:security onlyGovernance - governance-controlled
      * @custom:security Cannot be changed after first call (pool creation functions check stateWplsPool == address(0))
      */
-    function setStateWplsPool(address poolAddress) external onlyOwner {
+    function setStateWplsPool(address poolAddress) external onlyGovernance {
         require(poolAddress != address(0), "Invalid pool address");
         stateWplsPool = poolAddress;
         emit PoolCreated(poolAddress, 0, 0, 0); // Emit with zero amounts since pool already exists
@@ -254,11 +283,10 @@ contract BuyAndBurnController_V2 is Ownable, ReentrancyGuard {
      * 
      * @param stateAmount STATE tokens for initial liquidity (sourced from SWAP_V3 vault)
      * @param wplsAmount WPLS tokens for initial liquidity from governance wallet (optional if sending PLS)
-     * @custom:security onlyOwner + nonReentrant
+     * @custom:security onlyGovernance + nonReentrant
      * @custom:security Can only be called once (requires stateWplsPool == address(0))
-     * @custom:audit Addresses Finding #1 - nonReentrant modifier prevents reentrancy
      */
-    function createPoolOneClick(uint256 stateAmount, uint256 wplsAmount) external payable onlyOwner nonReentrant {
+    function createPoolOneClick(uint256 stateAmount, uint256 wplsAmount) external payable onlyGovernance nonReentrant {
         require(stateWplsPool == address(0), "Pool already initialized");
         require(stateAmount > 0, "Invalid STATE amount");
         // Calculate total WPLS needed
@@ -332,14 +360,13 @@ contract BuyAndBurnController_V2 is Ownable, ReentrancyGuard {
      * @param stateAmount Amount of STATE tokens to add (from SWAP_V3 vault)
      * @param wplsAmount Amount of WPLS tokens to add from governance wallet (optional if sending PLS)
      * @return liquidity Amount of LP tokens that were burned
-     * @custom:security onlyOwner + nonReentrant
+     * @custom:security onlyGovernance + nonReentrant
      * @custom:security LP tokens burned atomically in same transaction
-     * @custom:audit Addresses Finding #1 - nonReentrant modifier prevents reentrancy
      */
     function addMoreLiquidity(
         uint256 stateAmount,
         uint256 wplsAmount
-    ) external payable onlyOwner nonReentrant returns (uint256 liquidity) {
+    ) external payable onlyGovernance nonReentrant returns (uint256 liquidity) {
         require(stateWplsPool != address(0), "Pool not initialized");
         require(stateAmount > 0, "Invalid STATE amount");
         
@@ -398,10 +425,9 @@ contract BuyAndBurnController_V2 is Ownable, ReentrancyGuard {
      * @dev Standalone function for manual PLS conversion if needed
      * @dev Usually not needed - executeFullBuyAndBurn() does this automatically
      * @dev Useful for separate conversion before executeBuyAndBurn() if governance prefers granular control
-     * @custom:security onlyOwner + nonReentrant
-     * @custom:audit Addresses Finding #1 - nonReentrant modifier prevents reentrancy
+     * @custom:security onlyGovernance + nonReentrant
      */
-    function convertPLSToWPLS() external onlyOwner nonReentrant {
+    function convertPLSToWPLS() external onlyGovernance nonReentrant {
         uint256 plsBalance = address(this).balance;
         require(plsBalance > 0, "No PLS to convert");
         
@@ -427,12 +453,11 @@ contract BuyAndBurnController_V2 is Ownable, ReentrancyGuard {
      * - Ensures 100% fund utilization - no leftover WPLS
      * - Considers pool ratio changes from the swap itself
      * 
-     * @custom:security onlyOwner + nonReentrant
+     * @custom:security onlyGovernance + nonReentrant
      * @custom:security 5% slippage protection on all DEX operations
-     * @custom:audit Addresses Finding #1 - nonReentrant modifier prevents reentrancy
-     * @custom:audit Addresses Finding #2 - loop capped at 10 iterations (not unbounded)
+     * @custom:iteration Loop hard-capped at 10 iterations
      */
-    function executeBuyAndBurn() external onlyOwner nonReentrant {
+    function executeBuyAndBurn() external onlyGovernance nonReentrant {
         require(stateWplsPool != address(0), "Pool not initialized");
         
         uint256 wplsBalance = IERC20(WPLS).balanceOf(address(this));
@@ -487,10 +512,12 @@ contract BuyAndBurnController_V2 is Ownable, ReentrancyGuard {
      * @param stateReserve Current STATE reserve in pool (before operation)
      * @param wplsReserve Current WPLS reserve in pool (before operation)
      * @return wplsForSwap Amount of WPLS to use for buying STATE
-     * @return expectedState Amount of STATE expected from swap
+     * @return expectedState Amount of STATE expected from swap (approximate, excludes 0.29% fee)
      * @return stateForLP Amount of STATE needed for liquidity provision
      * @return wplsForLP Amount of WPLS to use for liquidity provision
-     * @custom:audit Addresses Finding #2 - loop is hard-capped at 10 iterations (line: "for (uint256 i = 0; i < 10; i++)")
+     * @custom:formula Constant product AMM: k = stateReserve * wplsReserve
+     * @custom:estimation Fee-less calculation for split optimization, actual swap applies 0.29% PulseX fee
+     * @custom:slippage 5% protection accounts for fees + price impact in actual swap execution
      */
     function calculateOptimalSplit(
         uint256 totalWPLS,
@@ -505,8 +532,33 @@ contract BuyAndBurnController_V2 is Ownable, ReentrancyGuard {
     ) {
         uint256 k = stateReserve * wplsReserve;
         
-        // Start with 70% for swap, 30% for LP (good starting point)
-        wplsForSwap = (totalWPLS * 70) / 100;
+        // SCENARIO 1: Check if existing STATE is enough to pair with all WPLS
+        // Calculate STATE needed at current pool ratio
+        uint256 stateNeededAtCurrentRatio = (totalWPLS * stateReserve) / wplsReserve;
+        
+        if (existingState >= stateNeededAtCurrentRatio) {
+            // We have enough STATE - no swap needed, add all as liquidity
+            wplsForSwap = 0;
+            expectedState = 0;
+            wplsForLP = totalWPLS;
+            stateForLP = stateNeededAtCurrentRatio;
+            return (wplsForSwap, expectedState, stateForLP, wplsForLP);
+        }
+        
+        // SCENARIO 2: We need more STATE - calculate minimum swap required
+        // Start with deficit-based calculation
+        uint256 stateDeficit = stateNeededAtCurrentRatio - existingState;
+        // Estimate WPLS needed to buy the deficit (approximate, will be refined in iterations)
+        uint256 minSwapEstimate = (stateDeficit * wplsReserve) / stateReserve;
+        
+        // SCENARIO 3: Initial swap percentage (50/50 split is optimal for constant product AMM)
+        uint256 startingSwapPercent = existingState > 0 ? 30 : 50;
+        wplsForSwap = (totalWPLS * startingSwapPercent) / 100;
+        
+        // If we have existing STATE, start closer to the minimum needed
+        if (existingState > 0 && minSwapEstimate < wplsForSwap) {
+            wplsForSwap = minSwapEstimate;
+        }
         
         // Iterate to find optimal split (max 10 iterations)
         for (uint256 i = 0; i < 10; i++) {
@@ -530,13 +582,18 @@ contract BuyAndBurnController_V2 is Ownable, ReentrancyGuard {
             if (totalStateAvailable >= stateForLP) {
                 // We have enough STATE - check if we can optimize further
                 if (totalStateAvailable > stateForLP && existingState > 0 && i < 9) {
-                    // We have excess STATE - try reducing swap to use more WPLS for LP
+                    // We have excess STATE - try reducing swap more aggressively
                     uint256 excess = totalStateAvailable - stateForLP;
-                    // Reduce swap proportionally (divide by 2 for gradual adjustment)
-                    uint256 reduction = (excess * wplsReserve) / stateReserve / 2;
+                    // More aggressive reduction when we have existing STATE
+                    uint256 reduction = (excess * wplsReserve) / stateReserve;
                     
-                    if (wplsForSwap > reduction) {
-                        wplsForSwap -= reduction;
+                    if (wplsForSwap > reduction && wplsForSwap >= reduction) {
+                        wplsForSwap = wplsForSwap > reduction ? wplsForSwap - reduction : 0;
+                        
+                        // Don't reduce to zero if we still need some STATE
+                        if (wplsForSwap == 0 && existingState < stateForLP) {
+                            wplsForSwap = (stateForLP - existingState) * wplsReserve / stateReserve;
+                        }
                         continue; // Re-calculate with reduced swap
                     }
                 }
@@ -592,7 +649,7 @@ contract BuyAndBurnController_V2 is Ownable, ReentrancyGuard {
      * @return stateReceived Actual amount of STATE received from swap
      * @custom:security Applies MAX_SLIPPAGE_BPS (5%) protection
      * @custom:security Calculates received amount from before/after balance (not trusting return value alone)
-     * @custom:audit Addresses Finding #10 - slippage protection mitigates front-running
+     * @custom:approval Exact amount approval to trusted PulseX Router (atomic transaction reverts all on failure)
      */
     function _swapWPLSForSTATE(uint256 wplsAmount, uint256 minStateOut) internal returns (uint256 stateReceived) {
         IERC20(WPLS).approve(ROUTER, wplsAmount);
@@ -624,7 +681,6 @@ contract BuyAndBurnController_V2 is Ownable, ReentrancyGuard {
      * @custom:security LP tokens sent to BURN_ADDRESS (0x...dEaD) - permanent removal
      * @custom:security 5% slippage protection on both tokens
      * @custom:security Calculates burned amount from before/after balance
-     * @custom:audit Addresses Finding #4 - using SafeERC20 library for safe transfers
      */
     function _addLiquidityAndBurn(uint256 stateAmount, uint256 wplsAmount) internal returns (uint256 liquidityBurned) {
         ISTATE(STATE).approve(ROUTER, stateAmount);
@@ -712,11 +768,12 @@ contract BuyAndBurnController_V2 is Ownable, ReentrancyGuard {
      * - Utilizes leftover STATE from previous operations (no waste)
      * 
      * @param plsAmountToUse Amount of PLS to convert and use (0 = use only existing WPLS/STATE)
-     * @custom:security onlyOwner + nonReentrant
+     * @custom:security onlyGovernance + nonReentrant
      * @custom:usage Call this periodically to process accumulated PLS from protocol
-     * @custom:audit Addresses Finding #1 - nonReentrant modifier prevents reentrancy
+     * @custom:reserves Reads reserves before swap for split calculation, then after swap for liquidity calculation
+     * @custom:dust Integer division dust accumulates and gets included in subsequent operations
      */
-    function executeFullBuyAndBurn(uint256 plsAmountToUse) external onlyOwner nonReentrant {
+    function executeFullBuyAndBurn(uint256 plsAmountToUse) external onlyGovernance nonReentrant {
         require(plsAmountToUse <= address(this).balance, "Insufficient PLS balance");
         
         // Step 1: Convert specified PLS amount to WPLS
@@ -737,56 +794,59 @@ contract BuyAndBurnController_V2 is Ownable, ReentrancyGuard {
             
             if (stateReserve > 0 && wplsReserve > 0) {
                 // Calculate optimal split considering existing STATE balance
-                (uint256 wplsForSwap, uint256 expectedState, uint256 stateForLP, uint256 wplsForLP) = 
+                (uint256 wplsForSwap, uint256 expectedState, , ) = 
                     calculateOptimalSplit(wplsBalance, existingStateBalance, stateReserve, wplsReserve);
                 
-                if (wplsForSwap > 0 && wplsForLP > 0) {
-                    // Step 2.1: Swap WPLS for STATE (only if we need more)
-                    uint256 stateBought = 0;
-                    if (wplsForSwap > 0) {
-                        stateBought = _swapWPLSForSTATE(wplsForSwap, expectedState);
+                // Track if we performed a swap
+                uint256 stateBought = 0;
+                
+                // Step 2.1: Swap WPLS for STATE (only if needed)
+                if (wplsForSwap > 0) {
+                    stateBought = _swapWPLSForSTATE(wplsForSwap, expectedState);
+                }
+                
+                // Step 2.2: Get ACTUAL pool reserves (after swap if it happened)
+                (uint256 newStateReserve, uint256 newWplsReserve) = getPoolReserves();
+                
+                // Step 2.3: Get actual balances
+                uint256 totalStateAvailable = ISTATE(STATE).balanceOf(address(this));
+                uint256 totalWplsAvailable = IERC20(WPLS).balanceOf(address(this));
+                
+                // Step 2.4: Add liquidity if we have both STATE and WPLS
+                // This works whether we swapped or not!
+                if (totalStateAvailable > 0 && totalWplsAvailable > 0) {
+                    // Calculate optimal amounts to use ALL available tokens
+                    // based on the current pool ratio
+                    uint256 stateToUse;
+                    uint256 wplsToUse;
+                    
+                    // Calculate how much WPLS we need to pair with all our STATE
+                    uint256 wplsNeededForAllState = (totalStateAvailable * newWplsReserve) / newStateReserve;
+                    
+                    if (wplsNeededForAllState <= totalWplsAvailable) {
+                        // We have enough WPLS to match all STATE - use all STATE
+                        stateToUse = totalStateAvailable;
+                        wplsToUse = wplsNeededForAllState;
+                        // Result: All STATE used, small WPLS leftover
+                    } else {
+                        // We have more STATE than needed - use all WPLS
+                        wplsToUse = totalWplsAvailable;
+                        stateToUse = (totalWplsAvailable * newStateReserve) / newWplsReserve;
+                        // Result: All WPLS used, small STATE leftover
                     }
                     
-                    // Step 2.2: Calculate total STATE available (bought + existing)
-                    uint256 totalStateAvailable = stateBought + existingStateBalance;
-                    
-                    if (totalStateAvailable >= stateForLP) {
-                        // Step 2.3: Add liquidity using required STATE and remaining WPLS
-                        uint256 liquidityBurned = _addLiquidityAndBurn(stateForLP, wplsForLP);
-                        emit BuyAndBurnExecuted(wplsForSwap + wplsForLP, stateBought, liquidityBurned);
+                    // Step 2.5: Add liquidity with optimized amounts
+                    if (stateToUse > 0 && wplsToUse > 0) {
+                        uint256 liquidityBurned = _addLiquidityAndBurn(stateToUse, wplsToUse);
+                        emit BuyAndBurnExecuted(wplsForSwap + wplsToUse, stateBought, liquidityBurned);
                     }
                 }
             }
         }
         
-        emit FullBuyAndBurnExecuted(plsConverted, wplsBalance);
-    }
-
-    /**
-     * @notice Emergency function to rescue stuck tokens (owner only)
-     * @dev Should only be used for tokens accidentally sent to contract
-     * @dev Not intended for normal STATE/WPLS balances used in operations
-     * @param token Address of ERC20 token to rescue
-     * @param amount Amount of tokens to rescue
-     * @custom:security onlyOwner - governance-controlled emergency function
-     * @custom:security Uses SafeERC20 for safe transfer
-     * @custom:audit Addresses Finding #4 - using SafeERC20.safeTransfer
-     */
-    function rescueTokens(address token, uint256 amount) external onlyOwner {
-        require(token != address(0), "Invalid token");
-        IERC20(token).safeTransfer(owner(), amount);
-    }
-    
-    /**
-     * @notice Emergency function to rescue stuck native PLS (owner only)
-     * @dev Should only be used in emergency scenarios
-     * @dev Normal PLS should be processed via executeFullBuyAndBurn()
-     * @param amount Amount of PLS to rescue
-     * @custom:security onlyOwner - governance-controlled emergency function
-     */
-    function rescuePLS(uint256 amount) external onlyOwner {
-        require(amount <= address(this).balance, "Insufficient balance");
-        payable(owner()).transfer(amount);
+        // Emit with actual WPLS used (wplsBalance before operation - balance after operation)
+        uint256 wplsUsed = wplsBalance - IERC20(WPLS).balanceOf(address(this));
+        emit FullBuyAndBurnExecuted(plsConverted, wplsUsed);
     }
     
     /**

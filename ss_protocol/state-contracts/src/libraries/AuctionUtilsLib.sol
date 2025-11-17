@@ -5,30 +5,13 @@ import "./AuctionLib.sol";
 
 /**
  * @title AuctionUtilsLib
+ * @author State Protocol Team
  * @notice Library for auction scheduling and timing calculations
- * @dev ARCHITECTURE NOTE - Separation of Concerns:
- *      This library provides CALCULATION FUNCTIONS ONLY. It does NOT enforce business rules.
- *      Business rule enforcement (limits, validations) happens at the APPLICATION LAYER (AuctionSwap.sol).
- *      
- *      This separation is intentional and follows best practices:
- *      - Library Layer: Reusable time/math calculations
- *      - Application Layer: Business logic enforcement (MAX_CYCLES_PER_TOKEN = 20)
- *      
- *      TIMING SYSTEM (Configurable via AuctionLib):
- *      - Each auction slot duration = AuctionLib.AUCTION_DURATION (configurable)
- *      - Interval between auctions = AuctionLib.AUCTION_INTERVAL (configurable)
- *      - Tokens rotate continuously through schedule: Token1 → Token2 → Token1 → Token2...
- *      - Each token runs for maximum cycles (enforced in AuctionSwap.sol line 361)
- *      
- *      AUDIT CLARIFICATION:
- *      This library was designed for flexible calculations. Limit enforcement is intentionally
- *      delegated to AuctionSwap.sol which checks:
- *      - MAX_CYCLES_PER_TOKEN = 20 (line 96)
- *      - if (currentCycle > MAX_CYCLES_PER_TOKEN) revert (line 361)
- *      - auctionDaysLimit = scheduleSize * 20 (line 196)
- *      
- *      If you're auditing this library in isolation, you MUST examine AuctionSwap.sol
- *      to understand the complete system design.
+ * @dev Provides reusable calculation functions for auction timing and token rotation
+ * @custom:architecture Library provides calculations only, business rules enforced in AuctionSwap.sol
+ * @custom:timing Configurable via AuctionLib constants (AUCTION_DURATION, AUCTION_INTERVAL)
+ * @custom:rotation Tokens rotate continuously: Index 0, 1, 2... % tokenCount (perfect sequential rotation)
+ * @custom:cycles Maximum cycles per token (20) enforced in AuctionSwap.sol, not in library layer
  */
 library AuctionUtilsLib {
     
@@ -133,9 +116,9 @@ library AuctionUtilsLib {
      * @param currentTime Current block timestamp
      * @return Number of completed auction cycles for this token (1-based count)
      * @dev This is the "cycle number" used throughout the system.
-     *      With N tokens in schedule: each token appears every N slots.
-     *      IMPORTANT: This function only COUNTS cycles. The cycle limit is enforced
-     *      in AuctionSwap.sol (line 361: if currentCycle > MAX_CYCLES_PER_TOKEN revert)
+     * @custom:rotation With N tokens in schedule, each token appears every N slots
+     * @custom:formula appearances = (completedSlots - tokenIndex) / tokenCount + 1
+     * @custom:limit Cycle maximum (20) enforced in AuctionSwap.sol, not here
      */
     function _appearanceCount(AuctionSchedule storage schedule, address token, uint256 currentTime) 
         internal 
@@ -222,8 +205,8 @@ library AuctionUtilsLib {
      * @param token Token to check
      * @param currentTime Current block timestamp
      * @return True if token is scheduled today AND cycle count is divisible by 4
-     * @dev Reverse auction pattern: every 4th cycle (cycles 4, 8, 12, 16, 20...)
-     *      Normal auction pattern: all other cycles (1, 2, 3, 5, 6, 7, 9, 10, 11...)
+     * @custom:pattern Reverse cycles occur every 4th appearance (cycles 4, 8, 12, 16, 20)
+     * @custom:economic Users can swap earned tokens back to STATE during reverse auctions
      */
     function _isReverseToday(AuctionSchedule storage schedule, address token, uint256 currentTime) internal view returns (bool) {
         (address today, bool active) = getTodayToken(schedule, currentTime);
@@ -257,9 +240,8 @@ library AuctionUtilsLib {
      * @param inputToken Token to check
      * @param currentTime Current block timestamp
      * @return Seconds remaining in current auction window (0 if not active)
-     * @dev Used by frontend to display countdown timer.
-     *      Returns 0 if it's not this token's turn or auction not active.
-     *      Duration is configurable via AuctionLib.AUCTION_DURATION
+     * @custom:precision Integer division used only for slot index; time remaining maintains full second precision
+     * @custom:display Frontend displays as countdown timer (e.g., "1h 1m 1s")
      */
     function getAuctionTimeLeft(
         AuctionSchedule storage schedule,
@@ -284,12 +266,9 @@ library AuctionUtilsLib {
      * @param tokens Array of token addresses to rotate (must equal scheduleSize)
      * @param startAt Unix timestamp when auctions begin (typically GMT+3 17:00 / 5 PM)
      * @param supportedTokens Mapping to verify tokens are supported
-     * @dev Can only be called once (schedule.scheduleSet prevents re-initialization).
-     *      Validates tokens are supported, unique, and non-zero.
-     *      Sets up 1-based indexing for cycle counting (scheduledIndex[token] = position + 1)
-     * @dev OPTIONAL SECURITY: Consider adding `require(startAt >= block.timestamp)` to prevent
-     *      accidentally setting start time in the past. Currently omitted as governance
-     *      is trusted to provide correct timestamps via UI.
+     * @custom:immutable Can only be called once (scheduleSet prevents re-initialization)
+     * @custom:validation Tokens must be supported, unique, and non-zero
+     * @custom:indexing Uses 1-based indexing for cycle counting (scheduledIndex[token] = position + 1)
      */
     function setAuctionSchedule(
         AuctionSchedule storage schedule,
@@ -319,9 +298,8 @@ library AuctionUtilsLib {
      * @notice Set maximum number of tokens that can participate in rotation
      * @param schedule Auction schedule storage reference
      * @param newSize New schedule size (1-50)
-     * @dev Can only be called before schedule initialization (scheduleSet = false).
-     *      Size is configurable for testing and deployment (limit is 50 tokens maximum).
-     *      Total auction slots = scheduleSize × MAX_CYCLES_PER_TOKEN
+     * @custom:immutable Can only be called before schedule initialization (scheduleSet = false)
+     * @custom:limit Total auction slots calculated as scheduleSize × MAX_CYCLES_PER_TOKEN in AuctionSwap.sol
      */
     function setScheduleSize(AuctionSchedule storage schedule, uint256 newSize) external {
         require(!schedule.scheduleSet, "Schedule already set");
@@ -333,9 +311,8 @@ library AuctionUtilsLib {
      * @notice Set total number of auction slots available
      * @param schedule Auction schedule storage reference
      * @param daysLimit Total auction slots (typically scheduleSize × MAX_CYCLES_PER_TOKEN)
-     * @dev In AuctionSwap constructor: auctionDaysLimit = scheduleSize * MAX_CYCLES_PER_TOKEN
-     *      This represents the GLOBAL auction capacity, not per-token limit.
-     *      Per-token limit is enforced in AuctionSwap.sol line 361.
+     * @custom:calculation Set in AuctionSwap constructor: auctionDaysLimit = scheduleSize * 20
+     * @custom:scope Global auction capacity limit, not per-token limit
      */
     function setAuctionDaysLimit(AuctionSchedule storage schedule, uint256 daysLimit) external {
         require(daysLimit > 0, "Invalid limit");

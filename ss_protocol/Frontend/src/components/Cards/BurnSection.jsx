@@ -12,7 +12,7 @@ import toast from "react-hot-toast";
 
 const BurnSection = () => {
     const { address } = useAccount();
-    const { AllContracts } = useContext(ContractContext);
+    const { AllContracts, provider } = useContext(ContractContext);
     const chainId = useChainId();
     const {
         BurnStateTokens,
@@ -43,7 +43,7 @@ const BurnSection = () => {
         (async () => {
             try {
                 if (!AllContracts?.AuctionContract || !address) return;
-                const gov = (await AllContracts.AuctionContract.governanceAddress()).toLowerCase();
+                const gov = (await (provider ? AllContracts.AuctionContract.connect(provider) : AllContracts.AuctionContract).governanceAddress()).toLowerCase();
                 const me = address.toLowerCase();
                 if (!cancelled) setIsGov(gov === me);
             } catch {
@@ -51,7 +51,7 @@ const BurnSection = () => {
             }
         })();
         return () => { cancelled = true; };
-    }, [AllContracts?.AuctionContract, address, AuthAddress]);
+    }, [AllContracts?.AuctionContract, provider, address, AuthAddress]);
     const nativeSymbol = chainCurrencyMap[chainId] || 'PLS';
 
     const handleBurnClick = async () => {

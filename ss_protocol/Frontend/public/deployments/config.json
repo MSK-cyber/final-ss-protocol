@@ -8,59 +8,52 @@
   "contracts": {
     "core": {
       "SWAP_V3": {
-        "address": "0xb11F88c87C6F38006D127268e528Ad2FfC09740B"
+        "address": "0x329390c539008885491a09Df6798267e643182A1"
       },
       "STATE_V3": {
-        "address": "0x3730863BBf398ec8A866f0BB2f2ea505F0FaE4CA",
+        "address": "0x72f55666a5CfB5a7C179F9E829402C34bd0708Bd",
         "name": "pSTATE",
         "symbol": "pSTATE",
         "decimals": 18
       },
       "DAV_V3": {
-        "address": "0xc2f7D2869A82cEbE50DD9220E8fFc12987B1Bf7A",
+        "address": "0xb8bC708aF8dc74DeFAff6A45708f37E046B1498d",
         "name": "pDAV",
         "symbol": "pDAV",
         "decimals": 18
       }
     },
-    "lens": {
+    "support": {
       "SwapLens": {
-        "address": "0x2C0CBaA4621aEB9e38FdF2ACf8BB1B1C45b12DF4"
-      }
-    },
-    "metrics": {
+        "address": "0x458D1e955374f3a45278B38ac7ae75bCFfc1c444"
+      },
       "AuctionMetrics": {
-        "address": "0x0406435d7bff6630Fe18883a9c620e849Be5a446"
-      }
-    },
-    "controllers": {
+        "address": ""
+      },
       "BuyAndBurnController": {
-        "address": "0xA1AaBEd2c9D173CC2c25311519d199B4FCa30999"
+        "address": "0xF6Cd74d4DEdB69bE6824F51d669D5F3483962335"
       }
     },
-    "distributors": {
+    "stages": {
       "AirdropDistributor": {
-        "address": "0xe02377CF0ceDd538ec33Af9984A136a649F7A338"
+        "address": "0x0d0F194f1d2652185F42148b584F8381a5c3545F"
       },
-      "BoostedRedemption": {
-        "address": "0xF3C11A05C0122D0f181481F00aae8a72A4c0ED40"
-      },
-      "ReverseBurnRedemption": {
-        "address": "0xA005b57050f67C816457eBcb460D1c0AFDa2d80b"
+      "AuctionAdmin": {
+        "address": "0x3F3350E7Cc9F1309182E3280eF9aBB4d042d6aB4"
       }
     },
-    "helpers": {
+    "utilities": {
       "LPHelper": {
-        "address": "0x5CbDC89F62608a242FF740A52d91eFdB7AB09114"
+        "address": ""
       }
     }
   },
   "dex": {
     "router": {
-      "address": "0x165C3410fC91EF562C50559f7d2289fEbed552d9"
+      "address": "0x98bf93ebf5c380C0e6Ae8e192A7e2AE08edAcc02"
     },
     "factory": {
-      "address": "0x29eA7545DEf87022BAdc76323F373EA1e707C523"
+      "address": "0x1715a3E4A142d8b698131108995174F37aEBA10D"
     },
     "baseToken": {
       "address": "0xA1077a294dDE1B09bB078844df40758a5D0f9a27",

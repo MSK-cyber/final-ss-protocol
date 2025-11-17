@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+
 /// @title ISWAP_V3 Interface
 /// @notice Interface for querying the SWAP_V3 auction contract state
 /// @dev This interface provides read-only access to auction schedule, daily state, and user participation data
@@ -82,12 +84,20 @@ interface ISWAP_V3 {
 }
 
 /// @title SwapLens - View-Only Utility for SWAP_V3 Auction System
-/// @author System State Protocol
+/// @author State Protocol Team
 /// @notice Provides comprehensive, gas-efficient read-only access to auction state and user data
 /// @dev This contract is purely for data aggregation and querying - it contains no state and performs no writes
 /// @dev All functions are view-only and can be called off-chain without gas costs
-/// @custom:security-contact security@systemstateprotocol.com
-contract SwapLens {
+/// @custom:alignment Logic EXACTLY replicates SWAP_V3 time calculations and auction mechanics from AuctionUtilsLib
+/// @custom:security Solidity 0.8.20 automatic overflow/underflow protection
+/// @custom:design Zero-value returns for invalid inputs allow graceful degradation in frontend queries
+contract SwapLens is Ownable {
+    
+    /// @notice Initializes SwapLens with deployer as owner and renounces ownership immediately
+    /// @dev Ownership renounced since this is a pure view-only contract with no state-changing functions
+    constructor() Ownable(msg.sender) {
+        renounceOwnership();
+    }
     
     // ============ Errors ============
     
@@ -144,6 +154,7 @@ contract SwapLens {
     /// @param s The SWAP_V3 interface instance
     /// @return start Unix timestamp when today's window started
     /// @return end Unix timestamp when today's window ends
+    /// @custom:timezone GMT+3 17:00 boundary encoded in scheduleStart, matches SWAP_V3 AuctionUtilsLib calculation
     function _todayWindow(ISWAP_V3 s) internal view returns (uint256 start, uint256 end) {
         uint256 d = _currentDayIndex(s);
         start = s.scheduleStart() + d * 1 days;
@@ -172,6 +183,7 @@ contract SwapLens {
     /// @param s The SWAP_V3 interface instance
     /// @param token The token address to check
     /// @return The number of times this token has appeared (0 if not scheduled or auction not started)
+    /// @custom:formula count = (currentDay - tokenIndex) / totalTokens + 1, matches AuctionUtilsLib
     function _appearanceCount(ISWAP_V3 s, address token) internal view returns (uint256) {
         if (!_auctionStarted(s)) return 0;
         uint256 idx1 = s.scheduledIndex(token);
@@ -192,6 +204,7 @@ contract SwapLens {
     /// @return isReverse Whether today is a reverse auction (every 4th appearance)
     /// @return appearance How many times this token has appeared
     /// @return secondsLeft Seconds remaining in today's auction window
+    /// @custom:reverse Reverse auction occurs when appearance % 4 == 0 (cycles 4, 8, 12, 16, 20)
     function _statusForToday(ISWAP_V3 s)
         internal
         view
@@ -260,6 +273,8 @@ contract SwapLens {
     /// @param s The SWAP_V3 contract address to query
     /// @return list Array of all scheduled token addresses in order
     /// @custom:throws InvalidContract if the provided address is not a deployed contract
+    /// @custom:gas View-only function (zero gas for off-chain calls), paginated alternative available
+    /// @custom:limit Max 50 tokens enforced in SWAP_V3 deployment
     function getScheduledTokens(ISWAP_V3 s) external view returns (address[] memory list) {
         _validate(s);
         uint256 n = s.scheduledTokensLength();
@@ -344,6 +359,7 @@ contract SwapLens {
     /// @return normal STATE tokens released through normal swaps on that day
     /// @return reverse STATE tokens released through reverse swaps on that day
     /// @custom:throws InvalidContract if the provided address is not a deployed contract
+    /// @custom:behavior Returns zero for invalid/future days rather than reverting (enables batch queries)
     function getStateReleasedByDay(ISWAP_V3 s, uint256 dayIndex)
         external
         view

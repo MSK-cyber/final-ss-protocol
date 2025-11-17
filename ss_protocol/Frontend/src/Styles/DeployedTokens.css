@@ -1,0 +1,221 @@
+/* Deployed Tokens Card Styles */
+.deployed-tokens-card {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(135deg, #1e1e1e 0%, #2a2a2a 100%) !important;
+  border: 1px solid rgba(255, 64, 129, 0.2) !important;
+  transition: all 0.3s ease;
+}
+
+.deployed-tokens-card:hover {
+  border-color: rgba(255, 64, 129, 0.4) !important;
+  box-shadow: 0 4px 20px rgba(255, 64, 129, 0.1);
+}
+
+.deployed-tokens-card .detailText {
+  font-weight: 600;
+  color: #ff4081;
+  letter-spacing: 0.5px;
+  padding-bottom: 15px;
+  border-bottom: 2px solid rgba(255, 64, 129, 0.2);
+  margin-bottom: 0 !important;
+}
+
+/* Deployed Tokens Grid */
+.deployed-tokens-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 15px;
+  max-height: 600px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 5px;
+}
+
+/* Custom Scrollbar */
+.deployed-tokens-grid::-webkit-scrollbar {
+  width: 8px;
+}
+
+.deployed-tokens-grid::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 10px;
+}
+
+.deployed-tokens-grid::-webkit-scrollbar-thumb {
+  background: rgba(255, 64, 129, 0.3);
+  border-radius: 10px;
+}
+
+.deployed-tokens-grid::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 64, 129, 0.5);
+}
+
+/* Token Card */
+.deployed-token-card {
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  transition: all 0.3s ease;
+}
+
+.deployed-token-card:hover {
+  background: rgba(255, 64, 129, 0.08);
+  border-color: rgba(255, 64, 129, 0.3);
+  transform: translateY(-3px);
+  box-shadow: 0 5px 15px rgba(255, 64, 129, 0.15);
+}
+
+/* Token Identicon */
+.token-identicon {
+  flex-shrink: 0;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 2px solid rgba(255, 64, 129, 0.3);
+  box-shadow: 0 2px 8px rgba(255, 64, 129, 0.2);
+}
+
+/* Token Info */
+.token-info {
+  min-width: 0;
+}
+
+.token-name {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #fff;
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.token-symbol {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #ff4081;
+  background: rgba(255, 64, 129, 0.1);
+  padding: 2px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+/* Pool Badge */
+.badge-sm {
+  font-size: 0.65rem;
+  padding: 2px 6px;
+  font-weight: 500;
+}
+
+.badge.bg-success {
+  background: linear-gradient(135deg, #28a745 0%, #20c997 100%) !important;
+}
+
+/* Token Address Row */
+.token-address-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.token-address {
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.5);
+  background: rgba(255, 255, 255, 0.05);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: 'Courier New', monospace;
+}
+
+/* Copy Button */
+.btn-copy {
+  padding: 2px 6px;
+  font-size: 0.7rem;
+  background: rgba(255, 64, 129, 0.1);
+  border: 1px solid rgba(255, 64, 129, 0.2);
+  color: #ff4081;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+}
+
+.btn-copy:hover {
+  background: rgba(255, 64, 129, 0.2);
+  border-color: rgba(255, 64, 129, 0.4);
+  color: #fff;
+  transform: scale(1.1);
+}
+
+/* Loading State */
+.spinner-border.text-primary {
+  color: #ff4081 !important;
+}
+
+/* Empty State */
+.deployed-tokens-card .text-muted {
+  color: rgba(255, 255, 255, 0.4) !important;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .deployed-tokens-grid {
+    grid-template-columns: 1fr;
+    max-height: 400px;
+  }
+  
+  .deployed-token-card {
+    padding: 12px;
+  }
+  
+  .token-identicon img {
+    width: 32px !important;
+    height: 32px !important;
+  }
+  
+  .token-name {
+    font-size: 0.85rem;
+  }
+  
+  .token-symbol {
+    font-size: 0.7rem;
+  }
+}
+
+@media (min-width: 769px) and (max-width: 1024px) {
+  .deployed-tokens-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 1025px) {
+  .deployed-tokens-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+/* Animation */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.deployed-token-card {
+  animation: fadeInUp 0.3s ease forwards;
+}
+
+.deployed-token-card:nth-child(1) { animation-delay: 0.05s; }
+.deployed-token-card:nth-child(2) { animation-delay: 0.1s; }
+.deployed-token-card:nth-child(3) { animation-delay: 0.15s; }
+.deployed-token-card:nth-child(4) { animation-delay: 0.2s; }
+.deployed-token-card:nth-child(5) { animation-delay: 0.25s; }
+.deployed-token-card:nth-child(6) { animation-delay: 0.3s; }
+.deployed-token-card:nth-child(7) { animation-delay: 0.35s; }
+.deployed-token-card:nth-child(8) { animation-delay: 0.4s; }
+.deployed-token-card:nth-child(9) { animation-delay: 0.45s; }

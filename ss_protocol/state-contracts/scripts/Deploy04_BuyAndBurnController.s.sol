@@ -7,18 +7,20 @@ import {BuyAndBurnController_V2} from "../src/BuyAndBurnController_V2.sol";
 
 contract Deploy04_BuyAndBurnController is Script {
     // Update these addresses after previous deployments
-    address constant STATE_V3_ADDRESS = 0x294a2db4E0c321AF7c2223e9ce19c0127F1424F2; // STATE_V3 from Deploy02
-    address constant SWAP_V3_ADDRESS = 0x1062D1bBD322781Be2a701698e8DD62E4D3aBCd4; // SWAP_V3 from Deploy01
+    address constant STATE_V3_ADDRESS = 0x72f55666a5CfB5a7C179F9E829402C34bd0708Bd; // STATE_V3 from Deploy02
+    address constant SWAP_V3_ADDRESS = 0x329390c539008885491a09Df6798267e643182A1; // SWAP_V3 from Deploy01
+    address constant AUCTION_ADMIN_ADDRESS = 0x3F3350E7Cc9F1309182E3280eF9aBB4d042d6aB4; // AuctionAdmin from Deploy03
 
     // PulseChain Mainnet addresses
     address constant WPLS = 0xA1077a294dDE1B09bB078844df40758a5D0f9a27;
     address constant PULSEX_ROUTER = 0x98bf93ebf5c380C0e6Ae8e192A7e2AE08edAcc02;
     address constant PULSEX_FACTORY = 0x1715a3E4A142d8b698131108995174F37aEBA10D;
-    address constant GOV_ADDRESS = 0xBAaB2913ec979d9d21785063a0e4141e5B787D28;
+    address constant GOV_ADDRESS = 0x9FA004E13e780EF5b50ca225ad5DCD4D0Fe9ed70;
 
     function run() external {
         require(STATE_V3_ADDRESS != address(0), "Must update STATE_V3_ADDRESS first");
         require(SWAP_V3_ADDRESS != address(0), "Must update SWAP_V3_ADDRESS first");
+        require(AUCTION_ADMIN_ADDRESS != address(0), "Must update AUCTION_ADMIN_ADDRESS first");
         
         console.log("=== DEPLOYING BUY AND BURN CONTROLLER CONTRACT ===");
         console.log("Chain ID:", block.chainid);
@@ -29,25 +31,25 @@ contract Deploy04_BuyAndBurnController is Script {
         console.log("PulseX Router:", PULSEX_ROUTER);
         console.log("PulseX Factory:", PULSEX_FACTORY);
         console.log("SWAP_V3 Contract:", SWAP_V3_ADDRESS);
+        console.log("AuctionAdmin Address:", AUCTION_ADMIN_ADDRESS);
         console.log("");
 
         vm.startBroadcast();
         
         console.log("Deploying BuyAndBurnController_V2...");
         BuyAndBurnController_V2 buyAndBurnController = new BuyAndBurnController_V2(
-            STATE_V3_ADDRESS,   // _state
-            WPLS,              // _wpls  
-            PULSEX_ROUTER,     // _router
-            PULSEX_FACTORY,    // _factory
-            SWAP_V3_ADDRESS    // _swapV3 (SWAP_V3 contract address)
+            STATE_V3_ADDRESS,       // _state
+            WPLS,                  // _wpls  
+            PULSEX_ROUTER,         // _router
+            PULSEX_FACTORY,        // _factory
+            SWAP_V3_ADDRESS,       // _swapV3
+            AUCTION_ADMIN_ADDRESS, // _auctionAdmin
+            GOV_ADDRESS            // _governance
         );
         
         console.log("SUCCESS: BuyAndBurnController_V2 deployed at:", address(buyAndBurnController));
+        console.log("NOTE: Ownership renounced in constructor - governance address has direct admin rights");
         console.log("");
-        
-        // Transfer ownership to governance
-        buyAndBurnController.transferOwnership(GOV_ADDRESS);
-        console.log("Ownership transferred to governance");
         
         vm.stopBroadcast();
         
@@ -63,7 +65,7 @@ contract Deploy04_BuyAndBurnController is Script {
         console.log("- Owner:", GOV_ADDRESS);
         console.log("");
         console.log("NEXT STEP: Deploy DAV_V3:");
-        console.log("forge script temp_scripts/Deploy05_DAV_V3.s.sol:Deploy05_DAV_V3");
+        console.log("forge script scripts/Deploy05_DAV_V3.s.sol:Deploy05_DAV_V3");
         console.log("  --rpc-url https://rpc.pulsechain.com");
         console.log("  --private-key $PRIVATE_KEY");
         console.log("  --broadcast");

@@ -6,7 +6,9 @@ import Header from "./components/Header";
 import InfoCards from "./components/InfoCards";
 import DataTable from "./components/DataTable";
 import DetailsInfo from "./components/DetailsInfo";
+import InfoPage from "./components/Info/InfoPage";
 import AuctionBoxes from "./components/Auction/AuctionBoxes";
+import LiveAuctionPage from "./components/Auction/LiveAuctionPage";
 import {
   BrowserRouter as Router,
   Routes,
@@ -18,9 +20,12 @@ import Footer from "./components/Footer";
 import DavHistory from "./components/DavHistory";
 import SwapComponent from "./components/Swap/SwapModel";
 import AdminLayout from "./components/admin/AdminLayout";
+import DiagnosticsPage from "./pages/DiagnosticsPage";
+import { useGovernanceGate } from "./components/admin/useGovernanceGate";
 
 const App = () => {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const { isGovernance, loading: govLoading } = useGovernanceGate();
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -53,17 +58,25 @@ const App = () => {
           {/* Main content area */}
           <main className="flex-grow-1">
             <Routes>
-              <Route path="/" element={<Navigate to="/auction" />} />
+              <Route path="/" element={<Navigate to="/davpage" />} />
               {/* DEX page removed from header; route kept temporarily for backward compatibility */}
               {/* <Route path="/Swap" element={<><SwapComponent /></>} /> */}
+              {/* Dav Mint page (InfoCards only) */}
               <Route
-                path="/auction"
+                path="/davpage"
                 element={
                   <>
                     <InfoCards />
-                    <AuctionBoxes />
-                    <DataTable />
                   </>
+                }
+              />
+              {/* Legacy route redirect for backward compatibility */}
+              <Route path="/auction" element={<Navigate to="/davpage" replace />} />
+              {/* New Auction page (live auction focus) */}
+              <Route
+                path="/live-auction"
+                element={
+                  <LiveAuctionPage />
                 }
               />
               <Route
@@ -73,14 +86,7 @@ const App = () => {
               {/* Legacy AddToken routes redirected to Admin Tokens */}
               <Route path="/ADDToken" element={<Navigate to="/admin/tokens" replace />} />
               <Route path="/AddToken" element={<Navigate to="/admin/tokens" replace />} />
-              <Route
-                path="/info"
-                element={
-                  <>
-                    <DetailsInfo />
-                  </>
-                }
-              />
+              <Route path="/info" element={<InfoPage />} />
               <Route
                 path="/dav-history"
                 element={
@@ -92,8 +98,25 @@ const App = () => {
               <Route
                 path="/admin/*"
                 element={
-                  <>
+                  // Route guard: only governance can access admin routes
+                  govLoading ? (
+                    <div className="container mt-4 text-center">
+                      <div className="spinner-border" role="status">
+                        <span className="visually-hidden">Loading...</span>
+                      </div>
+                    </div>
+                  ) : isGovernance ? (
                     <AdminLayout />
+                  ) : (
+                    <Navigate to="/davpage" replace />
+                  )
+                }
+              />
+              <Route
+                path="/diagnostics"
+                element={
+                  <>
+                    <DiagnosticsPage />
                   </>
                 }
               />

@@ -1,0 +1,155 @@
+/* td{
+    width: max-content;
+} */
+
+.infoTable {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.tc {
+  color: white;
+}
+
+.text-blue {
+  color: blue !important;
+}
+
+.infoTable tr {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.infoTable span {
+  color: white !important;
+  /* Ensures bright text */
+  filter: none !important;
+  /* Removes any dimming effect */
+  opacity: 1 !important;
+  /* Ensures full visibility */
+}
+
+.infoTable td {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  width: max-content;
+  padding: 0 10px;
+}
+
+.info-icon {
+  margin-right: 50px;
+}
+
+.mh-30 {
+  max-height: 30px;
+}
+
+.fontSetting {
+  font-size: small;
+  opacity: 0.5;
+}
+
+@media (max-width: 480px) {
+  .infoTable {
+    margin-bottom: 70px;
+    font-size: 12px;
+    /* Reduce font size on very small screens */
+  }
+
+  .infoTable th {
+    font-size: 14px;
+    padding: 5px 20px;
+  }
+
+  .info-icon {
+    margin-right: 0px;
+  }
+
+  .infoTable td {
+    width: max-content;
+    justify-content: center;
+    font-size: 12px;
+    padding: 5px;
+  }
+
+  .mh-30 {
+    max-height: 25px;
+  }
+}
+
+@keyframes blinkPink {
+
+  0%,
+  50%,
+  100% {
+    color: #ff4081;
+    opacity: 1;
+  }
+
+  25%,
+  75% {
+    opacity: 0;
+  }
+}
+
+.blink-new {
+  font-weight: bold;
+  animation: blinkPink 2s infinite;
+}
+
+.table-skeleton-row td {
+  border: none;
+  padding: 0;
+}
+
+/* Wrapper for skeleton blocks */
+.skeleton-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px;
+  background: #1f1f1f;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+/* Individual skeleton blocks */
+.skeleton-block {
+  height: 20px;
+  border-radius: 8px;
+  background: linear-gradient(
+    90deg,
+    rgba(50, 50, 50, 0.2) 20%,
+    rgba(80, 80, 80, 0.4) 40%,
+    rgba(100, 100, 100, 0.6) 50%,
+    rgba(80, 80, 80, 0.4) 60%,
+    rgba(50, 50, 50, 0.2) 80%
+  );
+  background-size: 300% 100%;
+  animation: shimmer 2.5s linear infinite;
+}
+
+/* Shimmer animation for skeleton blocks */
+@keyframes shimmer {
+  0% {
+    background-position: 300% 0;
+  }
+  100% {
+    background-position: -300% 0;
+  }
+}
+
+/* Pulse animation for the wrapper */
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.85;
+  }
+}

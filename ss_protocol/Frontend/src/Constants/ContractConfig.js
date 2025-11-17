@@ -1,8 +1,12 @@
 import DavTokenABI from "../ABI/DavToken.json";
 import StateTokenABI from "../ABI/StateToken.json";
-import AuctionSwapABI from "../ABI/AuctionSwap.json";
+// Use the full AuctionSwap ABI to ensure all read functions are available
+// Use the extended ABI so admin + initialization getters/setters are available
+import AuctionSwapABI from "../ABI/SWAP_V3_EXTENDED.json";
 import AirdropDistributorABI from "../ABI/AirdropDistributor.json";
+import AuctionAdminABI from "../ABI/AuctionAdmin.json";
 import SwapLensABI from "../ABI/SwapLens.json";
+import LiquidityManagerABI from "../ABI/LiquidityManager.json";
 import { 
   getContractAddresses, 
   CHAIN_IDS,
@@ -43,21 +47,27 @@ const LP_HELPER_MIN_ABI = [
 ];
 
 const BUY_BURN_MIN_ABI = [
+	// Admin controls (not all used in UI but kept for completeness)
 	{"type":"function","name":"setRouter","inputs":[{"name":"router","type":"address"}],"outputs":[],"stateMutability":"nonpayable"},
 	{"type":"function","name":"setRatio","inputs":[{"name":"base","type":"address"},{"name":"baseUnit","type":"uint256"},{"name":"stateUnit","type":"uint256"}],"outputs":[],"stateMutability":"nonpayable"},
 	{"type":"function","name":"setPolicy","inputs":[{"name":"num","type":"uint256"},{"name":"den","type":"uint256"}],"outputs":[],"stateMutability":"nonpayable"},
 	{"type":"function","name":"setExecutor","inputs":[{"name":"account","type":"address"},{"name":"allowed","type":"bool"}],"outputs":[],"stateMutability":"nonpayable"},
 	{"type":"function","name":"pause","inputs":[],"outputs":[],"stateMutability":"nonpayable"},
 	{"type":"function","name":"unpause","inputs":[],"outputs":[],"stateMutability":"nonpayable"},
-	{"type":"function","name":"executeBuyAndBurn","inputs":[{"name":"auctionId","type":"uint256"},{"name":"minStateOut","type":"uint256"},{"name":"minBase","type":"uint256"},{"name":"deadline","type":"uint256"}],"outputs":[],"stateMutability":"nonpayable"},
 
-	// Added pool creation & setup functions used by UI
+	// V2 buy & burn functions (match deployed contract)
+	{"type":"function","name":"executeBuyAndBurn","inputs":[],"outputs":[],"stateMutability":"nonpayable"},
+	{"type":"function","name":"executeFullBuyAndBurn","inputs":[{"name":"plsAmountToUse","type":"uint256"}],"outputs":[],"stateMutability":"nonpayable"},
+	{"type":"function","name":"convertPLSToWPLS","inputs":[],"outputs":[],"stateMutability":"nonpayable"},
+
+	// Pool creation & setup
 	{"type":"function","name":"setStateWplsPool","inputs":[{"name":"poolAddress","type":"address"}],"outputs":[],"stateMutability":"nonpayable"},
 	{"type":"function","name":"setupSwapVaultAllowance","inputs":[{"name":"amount","type":"uint256"}],"outputs":[],"stateMutability":"nonpayable"},
 	{"type":"function","name":"createPoolOneClick","inputs":[{"name":"stateAmount","type":"uint256"},{"name":"wplsAmount","type":"uint256"}],"outputs":[],"stateMutability":"payable"},
+	{"type":"function","name":"addMoreLiquidity","inputs":[{"name":"stateAmount","type":"uint256"},{"name":"wplsAmount","type":"uint256"}],"outputs":[{"name":"liquidity","type":"uint256"}],"stateMutability":"payable"},
 	{"type":"function","name":"stateWplsPool","inputs":[],"outputs":[{"type":"address"}],"stateMutability":"view"},
-	{"type":"function","name":"getControllerStatus","inputs":[],"outputs":[{"name":"plsBalance","type":"uint256"},{"name":"wplsBalance","type":"uint256"},{"name":"stateBalance","type":"uint256"},{"name":"poolAddress","type":"address"},{"name":"poolStateReserve","type":"uint256"},{"name":"poolWplsReserve","type":"uint256"}],"stateMutability":"view"}
-	,
+	{"type":"function","name":"getControllerStatus","inputs":[],"outputs":[{"name":"plsBalance","type":"uint256"},{"name":"wplsBalance","type":"uint256"},{"name":"stateBalance","type":"uint256"},{"name":"poolAddress","type":"address"},{"name":"poolStateReserve","type":"uint256"},{"name":"poolWplsReserve","type":"uint256"}],"stateMutability":"view"},
+
 	// Core immutable/public vars for diagnostics
 	{"type":"function","name":"STATE","inputs":[],"outputs":[{"type":"address"}],"stateMutability":"view"},
 	{"type":"function","name":"WPLS","inputs":[],"outputs":[{"type":"address"}],"stateMutability":"view"},
@@ -82,15 +92,14 @@ const AIRDROP_MIN_ABI = [
   {"type":"function","name":"setConsumer","inputs":[{"name":"consumer","type":"address"},{"name":"allowed","type":"bool"}],"outputs":[],"stateMutability":"nonpayable"}
 ];
 
-const BOOST_MIN_ABI = [
-  {"type":"function","name":"pause","inputs":[],"outputs":[],"stateMutability":"nonpayable"},
-  {"type":"function","name":"unpause","inputs":[],"outputs":[],"stateMutability":"nonpayable"},
-  {"type":"function","name":"getDailyCapInfo","inputs":[],"outputs":[{"name":"windowStart","type":"uint256"},{"name":"usedUnits","type":"uint256"},{"name":"capUnits","type":"uint256"}],"stateMutability":"view"}
-];
-
-const REVERSE_MIN_ABI = [
-  {"type":"function","name":"pause","inputs":[],"outputs":[],"stateMutability":"nonpayable"},
-  {"type":"function","name":"unpause","inputs":[],"outputs":[],"stateMutability":"nonpayable"}
+const LIQUIDITY_MANAGER_MIN_ABI = [
+	{"type":"function","name":"addLiquidityToExistingPool","inputs":[{"name":"token","type":"address"},{"name":"tokenAmount","type":"uint256"},{"name":"stateAmount","type":"uint256"}],"outputs":[{"name":"liquidity","type":"uint256"}],"stateMutability":"nonpayable"},
+	{"type":"function","name":"swapVault","inputs":[],"outputs":[{"name":"","type":"address"}],"stateMutability":"view"},
+	{"type":"function","name":"stateToken","inputs":[],"outputs":[{"name":"","type":"address"}],"stateMutability":"view"},
+	{"type":"function","name":"router","inputs":[],"outputs":[{"name":"","type":"address"}],"stateMutability":"view"},
+	{"type":"function","name":"factory","inputs":[],"outputs":[{"name":"","type":"address"}],"stateMutability":"view"},
+	{"type":"function","name":"owner","inputs":[],"outputs":[{"name":"","type":"address"}],"stateMutability":"view"},
+	{"type":"event","name":"LiquidityAdded","inputs":[{"name":"pool","type":"address","indexed":true},{"name":"token","type":"address","indexed":true},{"name":"tokenUsed","type":"uint256","indexed":false},{"name":"stateUsed","type":"uint256","indexed":false},{"name":"liquidityBurned","type":"uint256","indexed":false}],"anonymous":false}
 ];
 
 let currentChainId = CHAIN_IDS.PULSECHAIN; // Default chainId
@@ -110,23 +119,27 @@ export const getContractConfigs = () => {
 	return {
 		davContract: { 
 			address: addresses.DAV_TOKEN, 
-			abi: DavTokenABI 
+			abi: DavTokenABI.abi || DavTokenABI 
 		},
 		AuctionContract: { 
 			address: addresses.AUCTION, 
-			abi: AuctionSwapABI
+			abi: AuctionSwapABI.abi || AuctionSwapABI
 		},
 		stateContract: { 
 			address: addresses.STATE_TOKEN, 
-			abi: StateTokenABI 
+			abi: StateTokenABI.abi || StateTokenABI 
 		},
 		swapLens: {
 			address: addresses.SWAP_LENS,
-			abi: SwapLensABI || SWAP_LENS_MIN_ABI,
+			abi: SwapLensABI.abi || SwapLensABI || SWAP_LENS_MIN_ABI,
 		},
     lpHelper: {
       address: addresses.LP_HELPER,
       abi: LP_HELPER_MIN_ABI,
+    },
+    liquidityManager: {
+      address: addresses.LIQUIDITY_MANAGER,
+      abi: LiquidityManagerABI.abi || LiquidityManagerABI || LIQUIDITY_MANAGER_MIN_ABI,
     },
     buyBurnController: {
       address: addresses.BUY_BURN_CONTROLLER,
@@ -138,15 +151,11 @@ export const getContractConfigs = () => {
     },
 		airdropDistributor: {
 			address: addresses.AIRDROP_DISTRIBUTOR,
-			abi: AirdropDistributorABI,
+			abi: AirdropDistributorABI.abi || AirdropDistributorABI,
 		},
-		boostedRedemption: {
-			address: addresses.BOOSTED_REDEMPTION,
-			abi: BOOST_MIN_ABI,
-		},
-		reverseBurnRedemption: {
-			address: addresses.REVERSE_BURN_REDEMPTION,
-			abi: REVERSE_MIN_ABI,
+		auctionAdmin: {
+			address: addresses.AUCTION_ADMIN,
+			abi: AuctionAdminABI.abi || AuctionAdminABI,
 		},
 	};
 };
@@ -158,23 +167,27 @@ export const getContractConfigsForChain = (chainId) => {
 	return {
 		davContract: { 
 			address: addresses.DAV_TOKEN, 
-			abi: DavTokenABI 
+			abi: DavTokenABI.abi || DavTokenABI 
 		},
 		AuctionContract: { 
 			address: addresses.AUCTION, 
-			abi: AuctionSwapABI
+			abi: AuctionSwapABI.abi || AuctionSwapABI
 		},
 		stateContract: { 
 			address: addresses.STATE_TOKEN, 
-			abi: StateTokenABI 
+			abi: StateTokenABI.abi || StateTokenABI 
 		},
 		swapLens: {
 			address: addresses.SWAP_LENS,
-			abi: SwapLensABI || SWAP_LENS_MIN_ABI,
+			abi: SwapLensABI.abi || SwapLensABI || SWAP_LENS_MIN_ABI,
 		},
     lpHelper: {
       address: addresses.LP_HELPER,
       abi: LP_HELPER_MIN_ABI,
+    },
+    liquidityManager: {
+      address: addresses.LIQUIDITY_MANAGER,
+      abi: LiquidityManagerABI.abi || LiquidityManagerABI || LIQUIDITY_MANAGER_MIN_ABI,
     },
     buyBurnController: {
       address: addresses.BUY_BURN_CONTROLLER,
@@ -186,15 +199,11 @@ export const getContractConfigsForChain = (chainId) => {
     },
 		airdropDistributor: {
 			address: addresses.AIRDROP_DISTRIBUTOR,
-			abi: AirdropDistributorABI,
+			abi: AirdropDistributorABI.abi || AirdropDistributorABI,
 		},
-		boostedRedemption: {
-			address: addresses.BOOSTED_REDEMPTION,
-			abi: BOOST_MIN_ABI,
-		},
-		reverseBurnRedemption: {
-			address: addresses.REVERSE_BURN_REDEMPTION,
-			abi: REVERSE_MIN_ABI,
+		auctionAdmin: {
+			address: addresses.AUCTION_ADMIN,
+			abi: AuctionAdminABI.abi || AuctionAdminABI,
 		},
 	};
 };
@@ -206,11 +215,11 @@ export const isChainSupported = (chainId) => {
 };
 
 // Legacy function for backward compatibility
-const getDavABI = () => DavTokenABI;
+const getDavABI = () => DavTokenABI.abi || DavTokenABI;
 
 // Legacy export for backward compatibility - now uses dynamic addresses
 export const getLegacyContractConfigs = () => ({
 	davContract: { address: getDAVContractAddress(currentChainId), abi: getDavABI() },
-	AuctionContract: { address: getAUCTIONContractAddress(currentChainId), abi: AuctionSwapABI },
-	stateContract: { address: getSTATEContractAddress(currentChainId), abi: StateTokenABI },
+	AuctionContract: { address: getAUCTIONContractAddress(currentChainId), abi: AuctionSwapABI.abi || AuctionSwapABI },
+	stateContract: { address: getSTATEContractAddress(currentChainId), abi: StateTokenABI.abi || StateTokenABI },
 });

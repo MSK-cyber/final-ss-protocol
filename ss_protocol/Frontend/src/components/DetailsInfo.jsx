@@ -17,11 +17,14 @@ import { ContractContext } from "../Functions/ContractInitialize";
 import { useAllTokens } from "./Swap/Tokens";
 import { useChainId } from "wagmi";
 import { geckoPoolUrl } from "../Constants/ExternalLinks";
+import { useStatePoolAddress } from "../Functions/useStatePoolAddress";
 import SwapComponent from "./Swap/SwapModel";
+import DexModal from "./Swap/DexModal";
 import { explorerUrls } from "../Constants/ContractAddresses";
 import { chainCurrencyMap } from "../../WalletConfig";
-import { calculatePlsValue, calculatePlsValueNumeric, formatWithCommas } from "../Constants/Utils";
+import { calculatePlsValue, calculatePlsValueNumeric, formatWithCommas, truncateDecimals } from "../Constants/Utils";
 import { isImageUrl, notifySuccess } from "../Constants/Constants";
+import { generateIdenticon } from "../utils/identicon";
 
 // Memoized token row component
 const TokenRow = memo(({
@@ -35,22 +38,53 @@ const TokenRow = memo(({
   DavAddress,
   setDavAndStateIntoSwap,
   nativeSymbol,
-  explorerUrl
+  explorerUrl,
+  combinedDeployedLP
 }) => {
   const handleCopyAddress = useCallback(() => {
     navigator.clipboard.writeText(token.TokenAddress);
     notifySuccess(`${token.tokenName} Address copied to clipboard!`)
   }, [token.TokenAddress, token.tokenName]);
   const { StateBalance,getStateTokenBalanceAndSave } = useSwapContract();
+  const { poolAddress: statePoolAddress } = useStatePoolAddress();
 
-  const handleAddTokenClick = useCallback(() => {
+  // Map chain to the TOKENS key used for the wrapped native asset (used by SwapComponent)
+  const nativeWrappedKey = useMemo(() => {
+    if (chainId === 369) return "Wrapped Pulse"; // PulseChain
+    if (chainId === 146) return "Wrapped Sonic"; // Sonic
+    if (chainId === 137) return "Wrapped Matic"; // Polygon
+    return "Wrapped Ether"; // Default fallback
+  }, [chainId]);
+
+  const handleAddTokenClick = useCallback((e) => {
+    // Prevent event bubbling
+    if (e) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
+
+    const symbol = token.tokenName === "DAV"
+      ? (chainId === 137 ? "mDAV" : "pDAV")
+      : token.tokenName === "STATE"
+        ? (chainId === 137 ? "mSTATE" : "pSTATE")
+        : token.tokenName;
+    
+    console.log("handleAddTokenClick called:", {
+      address: token.TokenAddress,
+      symbol: symbol,
+      tokenName: token.tokenName,
+      chainId: chainId
+    });
+
+    if (!handleAddToken) {
+      console.error("handleAddToken function is not available");
+      toast.error("Unable to add token - function not available");
+      return;
+    }
+
     handleAddToken(
       token.TokenAddress,
-      token.tokenName === "DAV"
-        ? (chainId === 137 ? "mDAV" : "pDAV")
-        : token.tokenName === "STATE"
-          ? (chainId === 137 ? "mSTATE" : "pSTATE")
-          : token.tokenName
+      symbol
     );
   }, [handleAddToken, token.TokenAddress, token.tokenName, chainId]);
 
@@ -66,6 +100,13 @@ const TokenRow = memo(({
   })();
   const [showDex, setShowDex] = useState(false);
   const [dexToken, setDexToken] = useState(null);
+
+  // Show integer current ratio (skip decimals)
+  const displayRatio = useMemo(() => {
+    const n = Number(token.ratio);
+    if (!Number.isFinite(n)) return token.ratio ?? "-";
+    return Math.floor(n);
+  }, [token.ratio]);
   return (
     <tr>
       <td className="text-center align-middle">
@@ -83,43 +124,67 @@ const TokenRow = memo(({
                 style={{ width: "30px", height: "30px", borderRadius: "50%" }}
                 alt="STATE logo"
               />
-            ) : isImageUrl(token.emoji) ? (
-              <img
-                src={token.emoji}
-                style={{ width: "30px", height: "30px", borderRadius: "50%" }}
-                alt={`${token.tokenName} emoji`}
-              />
             ) : (
-              <span style={{ fontSize: "20px" }}>
-                {token.emoji}
-              </span>
+              <img
+                src={isImageUrl(token.emoji) ? token.emoji : generateIdenticon(token.TokenAddress)}
+                style={{ width: "30px", height: "30px", borderRadius: "50%" }}
+                alt={`${token.tokenName} icon`}
+              />
             )}
           </span>
           <span>
-            {token.tokenName === "DAV"
-              ? (chainId === 137 ? "mDAV" : "pDAV")
-              : token.tokenName === "STATE"
-                ? (chainId === 137 ? "mSTATE" : "pSTATE")
-                : token.tokenName}
+            {token.displayName || token.tokenName}
           </span>
         </div>
       </td>
       <td className="text-center">
         <div className="mx-2">
-          {token.tokenName === "DAV" || token.tokenName === "STATE"
-            ? "------"
-            : (
-              <span style={{ color: showDot ? "#28a745" : "inherit" }}>
-                {`1:${formatWithCommas(token.ratio)}`}
-              </span>
-            )}
+          {token.tokenName === "DAV" ? (
+            "------"
+          ) : token.tokenName === "STATE" ? (
+            (() => {
+              const r = Number(pstateToPlsRatio || 0);
+              if (!Number.isFinite(r) || r <= 0) return "Loading...";
+              const s = r.toFixed(3); // exactly 3 decimals
+              return (
+                <span>
+                  {`1:${s}`}
+                </span>
+              );
+            })()
+          ) : (
+            <span style={{ color: showDot ? "#28a745" : "inherit" }}>
+              {`1:${formatWithCommas(displayRatio)}`}
+            </span>
+          )}
         </div>
       </td>
       <td className="text-center">
         <div className="mx-4">
-          {token.tokenName === "DAV" || token.tokenName === "STATE"
-            ? "-----"
-            : `${token.Cycle}/20`}
+          {token.tokenName === "DAV" || token.tokenName === "STATE" ? (
+            "-----"
+          ) : (
+            (() => {
+              const c = token.Cycle;
+              // If already formatted like "0/20", show as-is
+              if (typeof c === 'string' && c.includes('/')) {
+                const parts = c.split('/');
+                const num = Number(parts[0]?.trim());
+                const denom = Number(parts[1]?.trim());
+                const cappedNum = Number.isFinite(num) ? Math.min(num, 20) : 0;
+                const useDenom = Number.isFinite(denom) ? denom : 20;
+                return `${cappedNum}/${useDenom}`;
+              }
+              // If not started marker
+              if (String(c).toLowerCase() === 'not started') return 'Not Started';
+              const n = Number(c);
+              if (Number.isFinite(n)) {
+                const capped = Math.min(n, 20);
+                return `${capped}/20`;
+              }
+              return '0/20';
+            })()
+          )}
         </div>
       </td>
       <td className="text-center">
@@ -128,21 +193,10 @@ const TokenRow = memo(({
             "-----"
           ) : token.tokenName === "STATE" ? (
             <>
-              <div
-                style={{ cursor: "pointer" }}
-                onClick={async () => {
-                  await getStateTokenBalanceAndSave();
-                  notifySuccess("Update - STATE Token Vault Amount")
-                }}
-                title="Click to refresh cached STATE balance"
-              >
+              <span>
                 {formatWithCommas(token.DavVault)}
-              </div>
-              {savedStateTokenBalance !== null && (
-                <div style={{ color: "#ff4081" }}>
-                  {formatWithCommas(savedStateTokenBalance - token.DavVault)}
-                </div>
-              )}
+              </span>
+              {/* Refresh UI removed; integration retained and moved to Buy & Burn 'STATE Out' */}
             </>
           ) : (
             formatWithCommas(token.DavVault)
@@ -176,7 +230,7 @@ const TokenRow = memo(({
         <div className="mx-4">
           {token.tokenName === "DAV"
             ? "-----"
-            : `${formatWithCommas(token.BurnedLp)}`}
+            : formatWithCommas(token.BurnedLp)}
         </div>
       </td>
       <td className="text-center">
@@ -186,7 +240,7 @@ const TokenRow = memo(({
               <span>-----</span>
             ) : token.tokenName === "STATE" ? (
               <a
-                href={geckoPoolUrl(chainId, "0x8a37583793d74395cfa4ed841b34a5e012de3a4a")}
+                href={geckoPoolUrl(chainId, statePoolAddress)}
                 target="_blank"
                 rel="noopener noreferrer"
                 style={{ fontSize: "15px", color: "white" }}
@@ -244,11 +298,20 @@ const TokenRow = memo(({
             <img
               src={MetaMaskIcon}
               onClick={handleAddTokenClick}
-              alt="MetaMask"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  handleAddTokenClick(e);
+                }
+              }}
+              alt="Add to MetaMask"
+              title="Add to MetaMask"
+              role="button"
+              tabIndex={0}
               style={{
                 width: "20px",
                 height: "20px",
                 cursor: "pointer",
+                userSelect: "none",
               }}
             />
           </div>
@@ -273,7 +336,7 @@ const TokenRow = memo(({
               ) : (
                 <span>ADDED</span>
               )
-            ) : token.isRenounced === "true" ? (
+            ) : (token.isRenounced === true || token.isRenounced === "true") ? (
               <span>Renounced</span>
             ) : (
               <span>-------</span>
@@ -284,32 +347,56 @@ const TokenRow = memo(({
       <td className="text-center">
         <div className="mx-2">
           {calculatePlsValue(token, tokenBalances, pstateToPlsRatio, chainId)}
+          {(() => {
+            const rawBal = tokenBalances?.[token.tokenName];
+            if (rawBal == null) return null;
+            const num = Number(rawBal);
+            if (!Number.isFinite(num)) return null;
+            // Floor to 2 decimals without rounding up, then format with thousands separators
+            const factor = 100;
+            const floored = Math.floor(num * factor) / factor;
+            const withTwo = floored.toFixed(2);
+            // Apply thousands separators to integer portion, keep exactly 2 decimals
+            const [intPart, decPart] = withTwo.split('.');
+            const formattedInt = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+            const formatted = `${formattedInt}.${decPart}`;
+            return (
+              <div className="small text-white" style={{ lineHeight: 1.1, marginTop: 2 }}>
+                ({formatted} {token.tokenName})
+              </div>
+            );
+          })()}
         </div>
       </td>
       <td className="text-center">
-        {token.tokenName === "DAV" || token.tokenName === "STATE" ? (
+        {token.tokenName === "DAV" ? (
           <span>-----</span>
+        ) : token.tokenName === "STATE" ? (
+          // Enable DEX for STATE only when STATE/WPLS pool exists (auto-detected via Buy & Burn controller)
+          statePoolAddress && statePoolAddress !== "0x0000000000000000000000000000000000000000" ? (
+            <button
+              className="btn btn-sm btn-primary"
+              onClick={() => { setDexToken(nativeWrappedKey); setShowDex(true); }}
+              title="Open DEX for STATE/WPLS"
+            >
+              DEX
+            </button>
+          ) : (
+            <span>-----</span>
+          )
         ) : (
           <button className="btn btn-sm btn-primary" onClick={() => { setDexToken(token.tokenName); setShowDex(true); }}>DEX</button>
         )}
       </td>
       {/* Modal */}
       {showDex && (
-        <td colSpan="100%" style={{position:'relative'}}>
-          <div className="modal fade show" style={{display:'block'}} role="dialog">
-            <div className="modal-dialog modal-dialog-centered">
-              <div className="modal-content bg-dark text-light border-0">
-                <div className="modal-header border-0">
-                  <h5 className="modal-title">DEX</h5>
-                  <button type="button" className="btn-close btn-close-white" aria-label="Close" onClick={() => setShowDex(false)}></button>
-                </div>
-                <div className="modal-body">
-                  <SwapComponent preselectToken={dexToken} />
-                </div>
-              </div>
-            </div>
-          </div>
-          <div className="modal-backdrop fade show" onClick={() => setShowDex(false)}></div>
+        <td colSpan="100%" style={{ position: 'relative' }}>
+          <DexModal
+            isOpen={showDex}
+            onClose={() => setShowDex(false)}
+            token={token}
+            preselectToken={dexToken || token.tokenName}
+          />
         </td>
       )}
     </tr>
@@ -339,6 +426,15 @@ const DetailsInfo = ({ selectedToken }) => {
   const nativeSymbol = useMemo(() => chainCurrencyMap[chainId] || 'PLS', [chainId]);
   const explorerUrl = useMemo(() => explorerUrls[chainId] || "https://defaultexplorer.io/address/", [chainId]);
   const isInfoPage = useMemo(() => location.pathname === "/info", []);
+
+  // Combined LP burned for all deployed tokens (computed once per render)
+  const combinedDeployedLP = useMemo(() => {
+    try {
+      return tokens
+        .filter(t => t && t.isDeployed === true)
+        .reduce((acc, t) => acc + Number(t.BurnedLp || 0), 0);
+    } catch { return 0; }
+  }, [tokens]);
 
   // Memoized filtered tokens
   const filteredTokens = useMemo(() => {
@@ -430,11 +526,18 @@ const DetailsInfo = ({ selectedToken }) => {
 
   // Memoized total sum calculation
   const totalSum = useMemo(() => {
-    const sum = sortedTokens.reduce((sum, token) => {
+    // Sum of all supported auction tokens (excludes STATE/DAV inside util)
+    const tokensPls = sortedTokens.reduce((sum, token) => {
       return sum + calculatePlsValueNumeric(token, tokenBalances, pstateToPlsRatio);
     }, 0);
-    return formatWithCommas(sum.toFixed(0));
-  }, [sortedTokens, tokenBalances]);
+    // Add user's direct STATE holdings converted to PLS using the same pSTATE→PLS ratio
+    const stateBalRaw = tokenBalances?.["STATE"];
+    const stateBal = Number.parseFloat(stateBalRaw || 0);
+    const ratio = Number.parseFloat(pstateToPlsRatio || 0);
+    const statePls = (Number.isFinite(stateBal) && Number.isFinite(ratio) && ratio > 0) ? (stateBal * ratio) : 0;
+    const total = tokensPls + statePls;
+    return formatWithCommas(total.toFixed(0));
+  }, [sortedTokens, tokenBalances, pstateToPlsRatio]);
 
   // Optimized search handler
   const handleSearch = useCallback((e) => {
@@ -506,9 +609,9 @@ const DetailsInfo = ({ selectedToken }) => {
                     </tr>
                   ))
                 ) : (
-                  sortedTokens.map((token) => (
+                  sortedTokens.map((token, idx) => (
                     <TokenRow
-                      key={token.tokenName}
+                      key={`${(token.TokenAddress && typeof token.TokenAddress === 'string' ? token.TokenAddress.toLowerCase() : '') || token.tokenName}-${idx}`}
                       token={token}
                       tokenBalances={tokenBalances}
                       pstateToPlsRatio={pstateToPlsRatio}
@@ -520,6 +623,7 @@ const DetailsInfo = ({ selectedToken }) => {
                       setDavAndStateIntoSwap={setDavAndStateIntoSwap}
                       nativeSymbol={nativeSymbol}
                       explorerUrl={explorerUrl}
+                      combinedDeployedLP={combinedDeployedLP}
                     />
                   ))
                 )}

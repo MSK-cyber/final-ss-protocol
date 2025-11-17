@@ -9,8 +9,9 @@ import {
   setChainId,
   isChainSupported,
 } from "../Constants/ContractConfig";
-import { CHAIN_IDS } from "../Constants/ContractAddresses";
+import { CHAIN_IDS, getContractAddresses } from "../Constants/ContractAddresses";
 import { useAccount, useChainId, useWalletClient } from "wagmi";
+import { getRuntimeConfigSync } from "../Constants/RuntimeConfig";
 
 const ContractContext = createContext(null);
 
@@ -30,39 +31,79 @@ export const ContractProvider = ({ children }) => {
   const [AllContracts, setContracts] = useState({});
 
   useEffect(() => {
-    if (!isConnected || !address || !chainId || !walletClient) return;
+    // Always initialize contracts so the app works in read-only mode even without a wallet
+    let desiredChainId = isChainSupported(chainId) ? chainId : CHAIN_IDS.PULSECHAIN;
 
-    // check supported chain
+    // If the chain is "supported" but we don't have core contract addresses, fallback to PulseChain
+    try {
+      const addresses = getContractAddresses(desiredChainId);
+      if (!addresses?.AUCTION || !addresses?.DAV_TOKEN || !addresses?.STATE_TOKEN) {
+        if (desiredChainId !== CHAIN_IDS.PULSECHAIN) {
+          console.warn(`No core contracts configured for chain ${desiredChainId}. Falling back to PulseChain.`);
+        }
+        desiredChainId = CHAIN_IDS.PULSECHAIN;
+      }
+    } catch {}
+
     if (!isChainSupported(chainId)) {
-      console.warn(
-        `Connected chain ${chainId} is not supported. Using default chain.`
-      );
-      setChainId(CHAIN_IDS.PULSECHAIN);
-    } else {
-      setChainId(chainId);
+      console.warn(`Connected chain ${chainId} is not supported. Falling back to PulseChain.`);
     }
+    setChainId(desiredChainId);
 
     initializeContracts();
+    // Re-init on wallet connect/disconnect, chain changes, or wallet client changes
   }, [isConnected, address, chainId, walletClient]);
   const initializeContracts = async () => {
     try {
       setLoading(true);
+  // Resolve a reliable read RPC URL from runtime config
+      const runtimeCfg = getRuntimeConfigSync();
+      const fallbackRpcUrl = runtimeCfg?.network?.rpcUrl || "https://rpc.pulsechain.com";
 
-      if (!walletClient) {
-        throw new Error("Wallet client not available");
+      // Build an EIP-1193 provider from available sources (walletClient or window.ethereum)
+      let browserProvider = null;
+      let signer = null;
+      let userAddress = null;
+      try {
+        // Prefer walletClient if available (viem wallet client implements request and works as EIP-1193)
+        if (walletClient && typeof walletClient.request === "function") {
+          browserProvider = new ethers.BrowserProvider(walletClient);
+        } else if (walletClient?.transport && typeof walletClient.transport.request === "function") {
+          browserProvider = new ethers.BrowserProvider(walletClient.transport);
+        } else if (typeof window !== "undefined" && window.ethereum) {
+          browserProvider = new ethers.BrowserProvider(window.ethereum);
+        }
+        // Try to get signer only if we have a browser provider and a connected wallet
+        if (browserProvider && isConnected) {
+          signer = await browserProvider.getSigner().catch(() => null);
+          if (signer) {
+            userAddress = await signer.getAddress().catch(() => null);
+          }
+        }
+      } catch (provErr) {
+        console.warn("BrowserProvider not available or signer not accessible; continuing in read-only mode.", provErr);
       }
 
-      // ✅ Correct: wrap wagmi's walletClient transport
-      const browserProvider = new ethers.BrowserProvider(walletClient.transport);
+      // Always have a read-only provider as a fallback (PulseChain)
+      const readOnlyProvider = new ethers.JsonRpcProvider(fallbackRpcUrl);
 
-      const signer = await browserProvider.getSigner();
-      const userAddress = await signer.getAddress();
+      // Determine the active chain we intend to use for contracts
+      let activeChainId = isChainSupported(chainId) ? chainId : CHAIN_IDS.PULSECHAIN;
+      try {
+        const addrs = getContractAddresses(activeChainId);
+        if (!addrs?.AUCTION || !addrs?.DAV_TOKEN || !addrs?.STATE_TOKEN) {
+          activeChainId = CHAIN_IDS.PULSECHAIN;
+        }
+      } catch {}
+
+      // Only use signer for contracts if the wallet is on the active chain; otherwise use read-only provider
+      const execProvider = (signer && chainId === activeChainId) ? signer : readOnlyProvider;
 
       const contractInstances = Object.fromEntries(
         Object.entries(getContractConfigs()).map(([key, { address, abi }]) => {
           if (!address) return [key, null];
           try {
-            return [key, new ethers.Contract(address, abi, signer)];
+            return [key, new ethers.Contract(address, abi, execProvider)];
           } catch (e) {
             console.warn(`Contract init failed for ${key} at ${address}`);
             return [key, null];
@@ -84,7 +125,7 @@ export const ContractProvider = ({ children }) => {
             contractInstances.davContract = new ethers.Contract(
               onChainDav,
               DavTokenABI,
-              signer
+              execProvider
             );
             // Stash resolved address for consumers that need raw values
             contractInstances._davAddress = onChainDav;
@@ -93,29 +134,41 @@ export const ContractProvider = ({ children }) => {
             contractInstances.stateContract = new ethers.Contract(
               onChainState,
               StateTokenABI,
-              signer
+              execProvider
             );
             contractInstances._stateAddress = onChainState;
           }
-          if (onChainAirdrop && ethers.isAddress(onChainAirdrop)) {
+          if (onChainAirdrop && ethers.isAddress(onChainAirdrop) && onChainAirdrop !== ethers.ZeroAddress) {
             // Prefer the distributor address configured on-chain over static config
             contractInstances.airdropDistributor = new ethers.Contract(
               onChainAirdrop,
               (await import("../ABI/AirdropDistributor.json")).default,
-              signer
+              execProvider
             );
             contractInstances._airdropDistributorAddress = onChainAirdrop;
+          } else if (contractInstances.airdropDistributor) {
+            // Keep the static config instance if on-chain resolution failed
+            console.log("Using static airdropDistributor config (on-chain resolution failed or returned zero address)");
           }
         }
       } catch (e) {
         console.warn("Failed to resolve on-chain DAV/STATE addresses from Auction contract", e);
       }
 
-      console.log("Detected providers:", window.ethereum?.providers);
+      try {
+        console.debug("Contract initialization complete:", {
+          account: userAddress || "read-only",
+          auction: contractInstances?.AuctionContract?.target,
+          dav: contractInstances?.davContract?.target,
+          state: contractInstances?.stateContract?.target,
+          mode: signer ? "signer" : "read-only",
+        });
+      } catch {}
 
-      setProvider(browserProvider);
-      setSigner(signer);
-      setAccount(userAddress);
+  // Expose the read-only provider for consistent reads (even if a signer exists on another chain)
+  setProvider(readOnlyProvider);
+      setSigner(signer || null);
+      setAccount(userAddress || null);
       setContracts(contractInstances);
     } catch (err) {
       console.error("Failed to initialize contracts:", err);
@@ -134,11 +187,10 @@ export const ContractProvider = ({ children }) => {
     auction: AllContracts.AuctionContract,
     swapLens: AllContracts.swapLens,
     lpHelper: AllContracts.lpHelper,
+    liquidityManager: AllContracts.liquidityManager,
     buyBurnController: AllContracts.buyBurnController,
     auctionMetrics: AllContracts.auctionMetrics,
-    airdropDistributor: AllContracts.airdropDistributor,
-    boostedRedemption: AllContracts.boostedRedemption,
-    reverseBurnRedemption: AllContracts.reverseBurnRedemption,
+  airdropDistributor: AllContracts.airdropDistributor,
     // Expose resolved addresses when available (ethers v6 Contract.target also works)
     addresses: {
       dav: AllContracts?._davAddress || AllContracts?.davContract?.target,
