@@ -243,7 +243,7 @@ curl -L https://foundry.paradigm.xyz | bash
 foundryup
 
 # Clone repository
-git clone https://github.com/MSK-cyber/final-ss-protocol.git
+git clone https://github.com/CoolBoyMSK/final-ss-protocol.git
 cd final-ss-protocol/ss_protocol/state-contracts
 
 # Install dependencies
@@ -461,7 +461,7 @@ This project is licensed under the MIT License.
 
 ## 🔗 Links
 
-- **Repository:** https://github.com/MSK-cyber/final-ss-protocol
+- **Repository:** https://github.com/CoolBoyMSK/final-ss-protocol
 - **PulseChain:** https://pulsechain.com
 - **PulseX DEX:** https://pulsex.com
 

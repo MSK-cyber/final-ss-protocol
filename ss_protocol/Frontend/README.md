@@ -17,7 +17,7 @@ This document provides setup instructions for the State Protocol frontend applic
 Clone the State Protocol repository from GitHub:
 
 ```bash
-git clone https://github.com/MSK-cyber/final-ss-protocol.git
+git clone https://github.com/CoolBoyMSK/final-ss-protocol.git
 ```
 
 ### Navigate to the Frontend Directory
@@ -164,5 +164,5 @@ MIT License - see [LICENSE](../../../LICENSE) for details
 
 ## Support
 
-- **Repository:** https://github.com/MSK-cyber/final-ss-protocol
-- **Issues:** https://github.com/MSK-cyber/final-ss-protocol/issues
+- **Repository:** https://github.com/CoolBoyMSK/final-ss-protocol
+- **Issues:** https://github.com/CoolBoyMSK/final-ss-protocol/issues
