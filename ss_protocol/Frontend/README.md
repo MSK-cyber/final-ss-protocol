@@ -46,16 +46,10 @@ VITE_REOWN_PROJECT_ID="your_reown_project_id_here"
 
 # Optional - Governance Address Override (for testing)
 # VITE_GOVERNANCE_ADDRESS="0xYourGovernanceAddressHere"
-
-# Optional - Pinata IPFS (for token image uploads)
-# VITE_PINATA_API_KEY=""
-# VITE_PINATA_SECRET_API_KEY=""
-# VITE_PINATA_GATEWAY="https://your-gateway.mypinata.cloud/ipfs/"
 ```
 
 **Note:** 
 - Get your Reown Project ID from [Reown Cloud](https://cloud.reown.com/)
-- Pinata configuration is optional - if omitted, token creation will use emojis instead of images
 - `VITE_GOVERNANCE_ADDRESS` is for development/testing only - production uses on-chain governance
 
 ### Run the Development Server
