@@ -43,6 +43,7 @@ interface IBuyAndBurnController {
  * @custom:governance 7-day timelock for governance transfers across all protocol contracts
  * @custom:fees Distributes DAV minting fees (5% PLS) and auction fees (0.5%) to dev wallets
  * @custom:wallets Maximum 5 development fee wallets, percentages must sum to 100
+ * @custom:centralization Single governance address controls protocol - intended for launchpad model with timelock protection
  */
 contract AuctionAdmin is Ownable, ReentrancyGuard {
     using SafeERC20 for IERC20;
@@ -106,6 +107,7 @@ contract AuctionAdmin is Ownable, ReentrancyGuard {
     event DevelopmentFeeWalletPercentageUpdated(address indexed wallet, uint256 oldPercentage, uint256 newPercentage);
     event ProtocolGovernanceProposed(address indexed newGovernance, uint256 executeAfter);
     event ProtocolGovernanceTransferred(address indexed newGovernance);
+    event ProtocolGovernanceProposalCancelled(address indexed cancelledGovernance);
 
     modifier onlyMainContract() {
         require(msg.sender == address(mainContract), "Only main contract");
@@ -197,11 +199,13 @@ contract AuctionAdmin is Ownable, ReentrancyGuard {
     
     /**
      * @notice Cancel pending governance proposal (emergency)
-     * @dev Only callable by current owner before timelock expires
+     * @dev Only callable by current governance before timelock expires
      */
     function cancelProtocolGovernanceProposal() external onlyGovernance {
         require(pendingProtocolGovernance.newGovernance != address(0), "No pending governance");
+        address cancelledGovernance = pendingProtocolGovernance.newGovernance;
         delete pendingProtocolGovernance;
+        emit ProtocolGovernanceProposalCancelled(cancelledGovernance);
     }
     
     /**
@@ -242,11 +246,13 @@ contract AuctionAdmin is Ownable, ReentrancyGuard {
         address swapGovernance = mainContract.governanceAddress();
 
         // Deploy the token - 100% to SWAP treasury in SINGLE transaction
+        // NOTE: _owner = address(0) makes token ownerless from deployment (modified OZ Ownable allows this)
+        //       This is intentional and more efficient than deploying with owner then calling renounceOwnership()
         TOKEN_V3 token = new TOKEN_V3(
             name,
             symbol,
             address(mainContract),   // recipient (100% to SWAP contract in single mint)
-            address(0)               // _owner (address(0) makes token ownerless from deployment)
+            address(0)               // _owner (ownerless deployment - custom OZ modification)
         );
 
         tokenAddress = address(token);
@@ -412,6 +418,8 @@ contract AuctionAdmin is Ownable, ReentrancyGuard {
      * @dev Distributes 100% equally among all active wallets
      * @custom:formula basePercentage = 100 / count, remainder goes to first wallet
      * @custom:example 1 wallet = 100%, 2 wallets = 50/50, 3 wallets = 33/33/34
+     * @custom:remainder First wallet (index 0) receives remainder to ensure total equals 100%
+     *                   This is intentional - provides deterministic distribution with minimal complexity
      */
     function _rebalanceAllWallets() internal {
         if (developmentFeeWalletsCount == 0) return;

@@ -21,6 +21,8 @@ import {TimeUtilsLib} from "./libraries/TimeUtilsLib.sol";
  * @custom:time-boundary All day calculations use GMT+3 17:00 (5 PM) boundary for consistency with SWAP_V3
  * @custom:inventory-model No reservation system - claims processed first-come-first-served with clean revert on insufficient inventory
  * @custom:integration Coordinates with SWAP_V3 for auction schedules and DAV_V3 for balance verification
+ * @custom:consumption-model Tracks TOTAL consumed units per cycle (not incremental). DAV balance only increases
+ *                           between claims (mint-only token economics), making assignment operator correct
  */
 contract AirdropDistributor is Ownable(msg.sender), ReentrancyGuard {
     using SafeERC20 for IERC20;
@@ -31,6 +33,7 @@ contract AirdropDistributor is Ownable(msg.sender), ReentrancyGuard {
 
     /// @notice Tracks DAV units consumed per token, per user, per auction cycle
     /// @dev Three-dimensional mapping: token => user => cycle => consumed units
+    ///      Stores TOTAL consumed units (not incremental delta) - mathematically equivalent given DAV mint-only economics
     ///      Users can claim multiple times per cycle if they mint additional DAV between claims
     ///      Each cycle (1-20) maintains independent consumption tracking for the same token
     mapping(address => mapping(address => mapping(uint256 => uint256))) public consumedDavUnitsByCycle;
@@ -136,6 +139,7 @@ contract AirdropDistributor is Ownable(msg.sender), ReentrancyGuard {
         require(allowance >= amount, "Insufficient allowance");
 
         // Update consumption state before external calls (CEI pattern)
+        // Stores total consumed units: consumed = already + newUnits = davUnits (DAV mint-only economics)
         consumedDavUnitsByCycle[token][msg.sender][currentCycle] = davUnits;
 
         // Record analytics with GMT+3 17:00 day boundary alignment

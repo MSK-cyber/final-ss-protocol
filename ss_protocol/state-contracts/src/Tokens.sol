@@ -12,8 +12,9 @@ import "@openzeppelin/contracts/access/Ownable.sol";
  *
  * @custom:supply 5 billion tokens (5,000,000,000 with 18 decimals)
  * @custom:allocation Entire supply minted to recipient (typically SWAP_V3) in constructor
- * @custom:ownership Owner maintained for post-deployment configuration (e.g., token registration)
- * @custom:governance Owner can renounce ownership after setup for full decentralization
+ * @custom:ownership Deployed ownerless - constructor accepts address(0) for _owner parameter
+ * @custom:ownable-modification Uses modified OpenZeppelin Ownable.sol with constructor validation removed
+ *                               to allow address(0) as initial owner (ownerless from deployment)
  */
 contract TOKEN_V3 is ERC20, Ownable {
     
@@ -40,13 +41,15 @@ contract TOKEN_V3 is ERC20, Ownable {
     /// @param name Human-readable token name (e.g., "MyToken")
     /// @param symbol Token ticker symbol (e.g., "MTK")
     /// @param recipient Address receiving 100% of supply (typically SWAP_V3 auction contract)
-    /// @param _owner Owner address for post-deployment administration (typically governance)
+    /// @param _owner Owner address - pass address(0) for ownerless deployment (standard practice)
     /// @dev Constructor operations (atomic transaction):
     ///      1. Validate recipient address (non-zero)
     ///      2. Mint 5 billion tokens to recipient
-    ///      3. Set owner for post-deployment configuration
+    ///      3. Set owner (address(0) for ownerless tokens - modified OZ Ownable accepts this)
     ///      4. Emit InitialDistribution event
-    /// @dev Owner can later renounce ownership after completing setup tasks
+    /// @custom:ownerless-design Tokens deployed with _owner = address(0) have no owner from birth
+    ///                          Modified Ownable.sol constructor allows this (standard OZ v5 would revert)
+    ///                          This is intentional - saves gas vs deploying with owner then renouncing
     constructor(
         string memory name,
         string memory symbol,
