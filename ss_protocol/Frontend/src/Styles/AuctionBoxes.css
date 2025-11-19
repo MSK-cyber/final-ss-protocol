@@ -307,23 +307,25 @@
 }
 
 .auction-step-title {
-  font-size: 18px;           /* larger title to match mockup */
-  font-weight: 700;
-  font-family: 'Satoshi', sans-serif; /* match Dav Mint font */
-  letter-spacing: 0.2px; /* subtle tracking similar to Dav labels */
-  text-transform: none; /* ensure no all-caps on button title */
+  /* Align with Mint button typography (btn-primary btn-sm) */
+  font-size: 1rem; /* Bootstrap base size ~16px */
+  font-weight: 600; /* Match .btn-primary weight */
+  font-family: 'Satoshi', sans-serif;
+  letter-spacing: normal; /* Remove custom tracking for consistency */
+  text-transform: none;
 }
 
 .auction-step-sub {
-  font-size: 10px;           /* smaller subtitle to match mockup */
-  opacity: 1;                /* same as main text */
-  color: #ffffff;            /* match main text color */
-  font-weight: 700;          /* match Dav Mint weight */
-  font-family: 'Satoshi', sans-serif; /* match Dav Mint font */
+  /* Harmonize with Mint button style but remain visually secondary */
+  font-size: 10px; /* Keep original subtitle size */
+  opacity: 0.85;
+  color: #ffffff;
+  font-weight: 600; /* Match Mint button weight */
+  font-family: 'Satoshi', sans-serif;
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
-  text-transform: none; /* ensure subtitle respects casing */
+  text-transform: none;
 }
 
 /* If detailText class is present, keep the brighter style */

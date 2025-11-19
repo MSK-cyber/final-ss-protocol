@@ -11,6 +11,7 @@ contract Deploy05_DAV_V3 is Script {
     address constant AUCTION_ADMIN_ADDRESS = 0x3F3350E7Cc9F1309182E3280eF9aBB4d042d6aB4; // AuctionAdmin from Deploy03
     address constant BUY_AND_BURN_ADDRESS = 0xF6Cd74d4DEdB69bE6824F51d669D5F3483962335; // BuyAndBurn from Deploy04
     address constant SWAP_V3_ADDRESS = 0x329390c539008885491a09Df6798267e643182A1; // SWAP_V3 from Deploy01
+    address constant PULSEX_ROUTER_ADDRESS = 0x165C3410fC91EF562C50559f7d2289fEbed552d9; // PulseX Router V2
     address constant GOV_ADDRESS = 0x9FA004E13e780EF5b50ca225ad5DCD4D0Fe9ed70;
 
     function run() external {
@@ -28,6 +29,7 @@ contract Deploy05_DAV_V3 is Script {
         console.log("AuctionAdmin Address:", AUCTION_ADMIN_ADDRESS);
         console.log("BuyAndBurnController Address:", BUY_AND_BURN_ADDRESS);
         console.log("SWAP_V3 Address:", SWAP_V3_ADDRESS);
+        console.log("PulseX Router Address:", PULSEX_ROUTER_ADDRESS);
         console.log("");
 
         vm.startBroadcast();
@@ -39,6 +41,7 @@ contract Deploy05_DAV_V3 is Script {
             AUCTION_ADMIN_ADDRESS,    // _auctionAdmin (for dev fee wallet registry)
             BUY_AND_BURN_ADDRESS,     // _buyAndBurnController (receives 80% liquidity + ROI calculation)
             SWAP_V3_ADDRESS,          // _swapContract (for ROI calculations)
+            PULSEX_ROUTER_ADDRESS,    // _pulsexRouter (for AMM price calculations)
             "PulseDAV",              // tokenName
             "pDAV1"                   // tokenSymbol
         );

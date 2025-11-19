@@ -157,11 +157,11 @@ export async function detectAuctionInterval(auctionContract) {
       console.warn('Could not load auction interval from localStorage:', e);
     }
     
-    // Fallback to 1 hour when unknown
-    return 3600;
+    // Fallback to 0 interval (continuous) when unknown
+    return 0;
   } catch (error) {
     console.warn('Error detecting auction interval:', error?.message || error);
-    return cachedAuctionInterval || 3600;
+    return cachedAuctionInterval || 0;
   }
 }
 
@@ -199,9 +199,9 @@ export async function getAuctionTiming(auctionContract, tokenAddress = null) {
     if (!auctionContract) {
       return {
         duration: 7200,
-        interval: 3600,
+        interval: 0,
         durationFormatted: '2 hours',
-        intervalFormatted: '1 hour',
+        intervalFormatted: '0 seconds',
       };
     }
     // Fast-path: if contract exposes getSlotInfo(), use it directly
@@ -265,9 +265,9 @@ export async function getAuctionTiming(auctionContract, tokenAddress = null) {
     console.warn('Error getting auction timing:', error?.message || error);
     return {
       duration: 300,
-      interval: 300,
+      interval: 0,
       durationFormatted: '5 minutes',
-      intervalFormatted: '5 minutes',
+      intervalFormatted: '0 seconds',
     };
   }
 }
@@ -327,28 +327,28 @@ export function invalidateTimingCache() {
 }
 
 // ===== Manual schedule support =====
-// Anchor: 2025-11-17 20:30 PKT (UTC+5) = 2025-11-17 15:30:00 UTC
+// Anchor: 2025-11-11 21:00 GMT+2 = 2025-11-11 19:00:00 UTC
 let MANUAL_ANCHOR_UTC = 0;
 try {
-  const ts = Date.parse('2025-11-17T15:30:00Z');
+  const ts = Date.parse('2025-11-11T19:00:00Z');
   if (!Number.isNaN(ts)) MANUAL_ANCHOR_UTC = Math.floor(ts / 1000);
 } catch {}
 if (!MANUAL_ANCHOR_UTC) {
-  // Fallback hardcoded epoch if Date parsing unavailable (Nov 17, 2025 15:30:00 UTC)
-  // This is 1763393400 if computed; keep zero if unknown to force recompute by caller
-  MANUAL_ANCHOR_UTC = 1763393400;
+  // Fallback hardcoded epoch if Date parsing unavailable (Nov 11, 2025 19:00:00 UTC)
+  // This is 1731348000 if computed; keep zero if unknown to force recompute by caller
+  MANUAL_ANCHOR_UTC = 1731348000;
 }
 
 /**
- * Compute manual auction phase from a fixed anchor (21:00 GMT+2 daily start on Nov 11, 2025).
+ * Compute manual auction phase from a fixed anchor (21:00 GMT+2 on Nov 11, 2025 = 19:00 UTC).
  * - duration: 2h (7200)
- * - interval: 1h (3600)
- * - slot = 3h (duration + interval)
+ * - interval: 0 (continuous auctions)
+ * - slot = 2h (duration + interval)
  * Returns { phase: 'active'|'interval', secondsLeft, phaseEndAt }
  */
 export function computeManualPhase(nowSec, options = {}) {
   const duration = Number(options.duration ?? 7200);
-  const interval = Number(options.interval ?? 3600);
+  const interval = Number(options.interval ?? 0);
   const slot = duration + interval;
   const anchor = Number(options.anchorUtc ?? MANUAL_ANCHOR_UTC);
   if (!nowSec || !anchor || slot <= 0 || duration <= 0) {

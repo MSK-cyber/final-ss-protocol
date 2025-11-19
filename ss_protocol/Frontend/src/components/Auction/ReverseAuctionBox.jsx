@@ -47,7 +47,7 @@ const ReverseAuctionBox = ({
                 disabled={busy}
                 aria-label="Execute Reverse Step 1"
               >
-                <div className="auction-step-title">REVERSE RATIO SWAP {doneReverse1 ? "✅" : null}</div>
+                <div className="auction-step-title">Reverse Ratio Swap {doneReverse1 ? "✅" : null}</div>
                 <div className="auction-step-sub detailText">{ratioText}</div>
               </button>
             </div>
@@ -63,7 +63,7 @@ const ReverseAuctionBox = ({
                 disabled={busy}
                 aria-label="Execute Reverse Step 2"
               >
-                <div className="auction-step-title">DOUBLE YOU STACK {doneReverse2 ? "✅" : null}</div>
+                <div className="auction-step-title">Double Your Stack {doneReverse2 ? "✅" : null}</div>
                 <div className="auction-step-sub detailText">
                   Swap your STATE tokens and double your stack
                 </div>

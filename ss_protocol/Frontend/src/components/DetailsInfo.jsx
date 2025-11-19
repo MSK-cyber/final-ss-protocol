@@ -22,9 +22,10 @@ import SwapComponent from "./Swap/SwapModel";
 import DexModal from "./Swap/DexModal";
 import { explorerUrls } from "../Constants/ContractAddresses";
 import { chainCurrencyMap } from "../../WalletConfig";
-import { calculatePlsValue, calculatePlsValueNumeric, formatWithCommas, truncateDecimals } from "../Constants/Utils";
-import { isImageUrl, notifySuccess } from "../Constants/Constants";
+import { calculatePlsValue, calculatePlsValueNumeric, formatWithCommas, truncateDecimals, calculateAmmPlsValue, calculateAmmPlsValueNumeric, calculateStateAmmPlsValueNumeric } from "../Constants/Utils";
+import { isImageUrl, notifySuccess, PULSEX_ROUTER_ADDRESS, PULSEX_ROUTER_ABI } from "../Constants/Constants";
 import { generateIdenticon } from "../utils/identicon";
+import { ethers } from "ethers";
 
 // Memoized token row component
 const TokenRow = memo(({
@@ -39,7 +40,9 @@ const TokenRow = memo(({
   setDavAndStateIntoSwap,
   nativeSymbol,
   explorerUrl,
-  combinedDeployedLP
+  combinedDeployedLP,
+  routerContract,
+  TOKENS
 }) => {
   const handleCopyAddress = useCallback(() => {
     navigator.clipboard.writeText(token.TokenAddress);
@@ -100,6 +103,7 @@ const TokenRow = memo(({
   })();
   const [showDex, setShowDex] = useState(false);
   const [dexToken, setDexToken] = useState(null);
+  const [ammPlsValue, setAmmPlsValue] = useState("Loading...");
 
   // Show integer current ratio (skip decimals)
   const displayRatio = useMemo(() => {
@@ -107,6 +111,32 @@ const TokenRow = memo(({
     if (!Number.isFinite(n)) return token.ratio ?? "-";
     return Math.floor(n);
   }, [token.ratio]);
+
+  // Calculate AMM-based PLS value
+  useEffect(() => {
+    let mounted = true;
+    const calculateValue = async () => {
+      if (!routerContract || !TOKENS || !tokenBalances) {
+        return;
+      }
+      
+      try {
+        const value = await calculateAmmPlsValue(token, tokenBalances, routerContract, TOKENS, chainId);
+        if (mounted) {
+          setAmmPlsValue(value);
+        }
+      } catch (error) {
+        console.error('Error calculating AMM value:', error);
+        if (mounted) {
+          setAmmPlsValue("N/A");
+        }
+      }
+    };
+
+    calculateValue();
+    return () => { mounted = false; };
+  }, [token, tokenBalances, routerContract, TOKENS, chainId]);
+
   return (
     <tr>
       <td className="text-center align-middle">
@@ -346,7 +376,7 @@ const TokenRow = memo(({
       </td>
       <td className="text-center">
         <div className="mx-2">
-          {calculatePlsValue(token, tokenBalances, pstateToPlsRatio, chainId)}
+          {ammPlsValue}
           {(() => {
             const rawBal = tokenBalances?.[token.tokenName];
             if (rawBal == null) return null;
@@ -421,6 +451,22 @@ const DetailsInfo = ({ selectedToken }) => {
   const { signer } = useContext(ContractContext);
   const TOKENS = useAllTokens();
   const tokenBalances = useTokenBalances(TOKENS, signer);
+  const [totalSum, setTotalSum] = useState("0");
+
+  // Initialize router contract for AMM calculations
+  const routerContract = useMemo(() => {
+    if (!signer || chainId !== 369) return null;
+    try {
+      return new ethers.Contract(
+        PULSEX_ROUTER_ADDRESS,
+        PULSEX_ROUTER_ABI,
+        signer.provider
+      );
+    } catch (error) {
+      console.error('Error initializing router contract:', error);
+      return null;
+    }
+  }, [signer, chainId]);
 
   // Memoized values
   const nativeSymbol = useMemo(() => chainCurrencyMap[chainId] || 'PLS', [chainId]);
@@ -524,20 +570,41 @@ const DetailsInfo = ({ selectedToken }) => {
       .map((token) => token.tokenName);
   }, [loading, filteredTokens, tokens]);
 
-  // Memoized total sum calculation
-  const totalSum = useMemo(() => {
-    // Sum of all supported auction tokens (excludes STATE/DAV inside util)
-    const tokensPls = sortedTokens.reduce((sum, token) => {
-      return sum + calculatePlsValueNumeric(token, tokenBalances, pstateToPlsRatio);
-    }, 0);
-    // Add user's direct STATE holdings converted to PLS using the same pSTATE→PLS ratio
-    const stateBalRaw = tokenBalances?.["STATE"];
-    const stateBal = Number.parseFloat(stateBalRaw || 0);
-    const ratio = Number.parseFloat(pstateToPlsRatio || 0);
-    const statePls = (Number.isFinite(stateBal) && Number.isFinite(ratio) && ratio > 0) ? (stateBal * ratio) : 0;
-    const total = tokensPls + statePls;
-    return formatWithCommas(total.toFixed(0));
-  }, [sortedTokens, tokenBalances, pstateToPlsRatio]);
+  // Memoized total sum calculation using AMM prices
+  useEffect(() => {
+    let mounted = true;
+    const calculateTotal = async () => {
+      if (!routerContract || !TOKENS || !tokenBalances || !sortedTokens.length) {
+        return;
+      }
+
+      try {
+        // Calculate sum of all auction tokens using AMM
+        const tokenPromises = sortedTokens.map(token => 
+          calculateAmmPlsValueNumeric(token, tokenBalances, routerContract, TOKENS, chainId)
+        );
+        const tokenValues = await Promise.all(tokenPromises);
+        const tokensPls = tokenValues.reduce((sum, val) => sum + val, 0);
+
+        // Add STATE holdings converted via AMM
+        const stateBalRaw = tokenBalances?.["STATE"];
+        const statePls = await calculateStateAmmPlsValueNumeric(stateBalRaw, routerContract, TOKENS, chainId);
+
+        const total = tokensPls + statePls;
+        if (mounted) {
+          setTotalSum(formatWithCommas(total.toFixed(0)));
+        }
+      } catch (error) {
+        console.error('Error calculating total:', error);
+        if (mounted) {
+          setTotalSum("Error");
+        }
+      }
+    };
+
+    calculateTotal();
+    return () => { mounted = false; };
+  }, [sortedTokens, tokenBalances, routerContract, TOKENS, chainId]);
 
   // Optimized search handler
   const handleSearch = useCallback((e) => {
@@ -624,6 +691,8 @@ const DetailsInfo = ({ selectedToken }) => {
                       nativeSymbol={nativeSymbol}
                       explorerUrl={explorerUrl}
                       combinedDeployedLP={combinedDeployedLP}
+                      routerContract={routerContract}
+                      TOKENS={TOKENS}
                     />
                   ))
                 )}

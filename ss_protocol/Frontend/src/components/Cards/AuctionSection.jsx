@@ -19,8 +19,8 @@ import { chainCurrencyMap } from "../../../WalletConfig";
 import useTokenBalances from "../Swap/UserTokenBalances";
 import { useAllTokens } from "../Swap/Tokens";
 import { ContractContext } from "../../Functions/ContractInitialize";
-import { notifyError } from "../../Constants/Constants";
-import { calculatePlsValueNumeric, formatNumber, formatWithCommas } from "../../Constants/Utils";
+import { notifyError, PULSEX_ROUTER_ADDRESS, PULSEX_ROUTER_ABI } from "../../Constants/Constants";
+import { calculatePlsValueNumeric, formatNumber, formatWithCommas, calculateAmmPlsValueNumeric, calculateStateAmmPlsValueNumeric } from "../../Constants/Utils";
 
 const AuctionSection = () => {
     const chainId = useChainId();
@@ -62,6 +62,22 @@ const AuctionSection = () => {
     const [copiedCode, setCopiedCode] = useState("");
     const AuthAddress = import.meta.env.VITE_AUTH_ADDRESS;
     const [isGov, setIsGov] = useState(false);
+    const [ammEstimatedPls, setAmmEstimatedPls] = useState(0);
+
+    // Initialize router contract for AMM calculations
+    const routerContract = useMemo(() => {
+        if (!signer || chainId !== 369) return null;
+        try {
+            return new ethers.Contract(
+                PULSEX_ROUTER_ADDRESS,
+                PULSEX_ROUTER_ABI,
+                signer.provider
+            );
+        } catch (error) {
+            console.error('Error initializing router contract:', error);
+            return null;
+        }
+    }, [signer, chainId]);
 
     useEffect(() => {
         let cancelled = false;
@@ -147,17 +163,56 @@ const AuctionSection = () => {
         }
         CalculationOfCost(e.target.value);
     };
-    // Helper to calculate total sum: Σ(token→STATE→PLS) + (STATE holdings→PLS)
+    
+    // Legacy ratio-based calculation (kept as fallback)
     const calculateTotalSum = () => {
         const tokensPls = tokens.reduce((sum, token) => {
             return sum + calculatePlsValueNumeric(token, tokenBalances, pstateToPlsRatio);
         }, 0);
-        const stateBalRaw = tokenBalances?.["STATE"]; // formatted string
+        const stateBalRaw = tokenBalances?.["STATE"];
         const stateBal = Number.parseFloat(stateBalRaw || 0);
         const ratio = Number.parseFloat(pstateToPlsRatio || 0);
         const statePls = (Number.isFinite(stateBal) && Number.isFinite(ratio) && ratio > 0) ? (stateBal * ratio) : 0;
         return tokensPls + statePls;
     };
+
+    // AMM-based calculation using actual DEX prices
+    useEffect(() => {
+        let mounted = true;
+        const calculateAmmTotal = async () => {
+            if (!routerContract || !TOKENS || !tokenBalances || !tokens.length) {
+                return;
+            }
+
+            try {
+                // Calculate sum of all auction tokens using AMM
+                const tokenPromises = tokens.map(token => 
+                    calculateAmmPlsValueNumeric(token, tokenBalances, routerContract, TOKENS, chainId)
+                );
+                const tokenValues = await Promise.all(tokenPromises);
+                const tokensPls = tokenValues.reduce((sum, val) => sum + val, 0);
+
+                // Add STATE holdings converted via AMM
+                const stateBalRaw = tokenBalances?.["STATE"];
+                const statePls = await calculateStateAmmPlsValueNumeric(stateBalRaw, routerContract, TOKENS, chainId);
+
+                const total = tokensPls + statePls;
+                if (mounted) {
+                    setAmmEstimatedPls(total);
+                }
+            } catch (error) {
+                console.error('Error calculating AMM total:', error);
+                // Fallback to ratio-based calculation
+                if (mounted) {
+                    const fallback = calculateTotalSum();
+                    setAmmEstimatedPls(fallback);
+                }
+            }
+        };
+
+        calculateAmmTotal();
+        return () => { mounted = false; };
+    }, [tokens, tokenBalances, routerContract, TOKENS, chainId]);
 
     const handleOptionalInputChange = (e) => {
         setReferralAmount(e.target.value);
@@ -167,17 +222,21 @@ const AuctionSection = () => {
         CalculationOfCost(amount);
     }, [CalculationOfCost, amount]);
 
-    // Use authoritative on-chain ROI values for display to match claim gating
+    // Use AMM-calculated value instead of on-chain ratio-based value
     const estimatedPlsValue = useMemo(() => {
+        // Use AMM calculation if available
+        if (ammEstimatedPls > 0) {
+            return ammEstimatedPls;
+        }
+        // Fallback to on-chain value if AMM not ready
         const v = Number.parseFloat(roiTotalValuePls || 0);
         if (Number.isFinite(v) && v >= 0) return v;
-        // Fallback to client estimate if on-chain unavailable
+        // Last resort: ratio-based client calculation
         try {
             const fallback = calculateTotalSum();
             return Number.isFinite(fallback) ? Math.max(0, fallback) : 0;
         } catch { return 0; }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [roiTotalValuePls, tokens, tokenBalances, pstateToPlsRatio]);
+    }, [ammEstimatedPls, roiTotalValuePls]);
 
     const requiredPlsValue = useMemo(() => {
         const v = Number.parseFloat(roiRequiredValuePls || 0);
@@ -190,12 +249,11 @@ const AuctionSection = () => {
     }, [roiRequiredValuePls, roiClientRequiredPls, totalInvestedPls]);
 
     const roiPctDisplay = useMemo(() => {
-        const onchain = Number.parseFloat(roiPercentage || 0);
-        if (Number.isFinite(onchain) && onchain >= 0) return String(Math.trunc(onchain));
+        // Use AMM-based calculation instead of on-chain roiPercentage
         if (!requiredPlsValue || requiredPlsValue <= 0) return '0';
         const pct = Math.trunc((estimatedPlsValue * 100) / requiredPlsValue);
         return String(pct >= 0 ? pct : 0);
-    }, [roiPercentage, estimatedPlsValue, requiredPlsValue]);
+    }, [estimatedPlsValue, requiredPlsValue]);
     return (
         <div className="container mt-4">
             <div className="row g-4 d-flex align-items-stretch pb-1">
@@ -391,13 +449,14 @@ const AuctionSection = () => {
                                     </p>
                                     <p className="mb-1">
                                         <span className="detailText">USER ROI % -</span>
-                                        <span className="ms-1 second-span-fontsize">
+                                        <span className="ms-1 second-span-fontsize" style={{ color: roiPctDisplay >= 100 ? '#28a745' : '#ff4081' }}>
                                             {isLoading ? <DotAnimation /> : formatWithCommas(roiPctDisplay)} %
                                         </span>
                                     </p>
 
                                     {/* USER APR removed as requested */}
-                                    <p className="mb-1">
+                                    {/* PLS INDEX hidden from UI (integration kept) */}
+                                    {/* <p className="mb-1">
                                         <span className="detailText">{nativeSymbol} INDEX -</span>
                                         <span className="ms-1 second-span-fontsize">
                                             {isLoading ? (
@@ -417,7 +476,7 @@ const AuctionSection = () => {
                                                 </>
                                             )}
                                         </span>
-                                    </p>
+                                    </p> */}
                                 </div>
                             </div>
                         </div>

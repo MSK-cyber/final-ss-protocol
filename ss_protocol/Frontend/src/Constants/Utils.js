@@ -114,3 +114,163 @@ export function calculatePlsValueNumeric(token, tokenBalances, pstateToPlsRatio)
 
     return plsValue;
 }
+
+// AMM-based calculation functions using actual DEX prices
+export async function calculateAmmPlsValue(token, tokenBalances, routerContract, TOKENS, chainId) {
+    if (token.tokenName === "DAV") {
+        return "-----";
+    }
+
+    const userBalance = tokenBalances?.[token.tokenName];
+    if (!userBalance || parseFloat(userBalance) <= 0) {
+        return `0 ${chainCurrencyMap[chainId] || 'PLS'}`;
+    }
+
+    if (!routerContract) {
+        return "Loading...";
+    }
+
+    try {
+        // Determine wrapped native token based on chain
+        let wrappedNativeKey = "Wrapped Pulse"; // Default for PulseChain
+        if (chainId === 146) wrappedNativeKey = "Wrapped Sonic";
+        else if (chainId === 137) wrappedNativeKey = "Wrapped Matic";
+        else if (chainId === 1) wrappedNativeKey = "Wrapped Ether";
+
+        // For STATE, swap directly to wrapped native
+        if (token.tokenName === "STATE") {
+            const stateAddress = TOKENS["STATE"]?.address;
+            const wplsAddress = TOKENS[wrappedNativeKey]?.address;
+            
+            if (!stateAddress || !wplsAddress) {
+                return "Loading...";
+            }
+
+            const amountIn = parseFloat(userBalance);
+            const amountInWei = BigInt(Math.floor(amountIn * 10**18));
+            const path = [stateAddress, wplsAddress];
+            
+            const amounts = await routerContract.getAmountsOut(amountInWei, path);
+            const amountOutWei = amounts[amounts.length - 1];
+            const plsValue = Number(amountOutWei) / 10**18;
+            
+            return `${formatWithCommas(plsValue.toFixed(0))} ${chainCurrencyMap[chainId] || 'PLS'}`;
+        }
+
+        // For auction tokens, swap to STATE first, then STATE to wrapped native
+        const tokenAddress = TOKENS[token.tokenName]?.address;
+        const stateAddress = TOKENS["STATE"]?.address;
+        const wplsAddress = TOKENS[wrappedNativeKey]?.address;
+        
+        if (!tokenAddress || !stateAddress || !wplsAddress) {
+            return "Loading...";
+        }
+
+        const amountIn = parseFloat(userBalance);
+        const decimals = TOKENS[token.tokenName]?.decimals || 18;
+        const amountInWei = BigInt(Math.floor(amountIn * 10**decimals));
+        
+        // Step 1: Token -> STATE
+        const path1 = [tokenAddress, stateAddress];
+        const amounts1 = await routerContract.getAmountsOut(amountInWei, path1);
+        const stateAmountWei = amounts1[amounts1.length - 1];
+        
+        // Step 2: STATE -> wrapped native
+        const path2 = [stateAddress, wplsAddress];
+        const amounts2 = await routerContract.getAmountsOut(stateAmountWei, path2);
+        const plsAmountWei = amounts2[amounts2.length - 1];
+        const plsValue = Number(plsAmountWei) / 10**18;
+        
+        return `${formatWithCommas(plsValue.toFixed(0))} ${chainCurrencyMap[chainId] || 'PLS'}`;
+    } catch (error) {
+        console.error(`Error calculating AMM value for ${token.tokenName}:`, error);
+        return "N/A";
+    }
+}
+
+export async function calculateAmmPlsValueNumeric(token, tokenBalances, routerContract, TOKENS, chainId) {
+    if (token.tokenName === "DAV" || token.tokenName === "STATE") {
+        return 0;
+    }
+
+    const userBalance = tokenBalances?.[token.tokenName];
+    if (!userBalance || parseFloat(userBalance) <= 0) {
+        return 0;
+    }
+
+    if (!routerContract) {
+        return 0;
+    }
+
+    try {
+        // Determine wrapped native token based on chain
+        let wrappedNativeKey = "Wrapped Pulse";
+        if (chainId === 146) wrappedNativeKey = "Wrapped Sonic";
+        else if (chainId === 137) wrappedNativeKey = "Wrapped Matic";
+        else if (chainId === 1) wrappedNativeKey = "Wrapped Ether";
+
+        const tokenAddress = TOKENS[token.tokenName]?.address;
+        const stateAddress = TOKENS["STATE"]?.address;
+        const wplsAddress = TOKENS[wrappedNativeKey]?.address;
+        
+        if (!tokenAddress || !stateAddress || !wplsAddress) {
+            return 0;
+        }
+
+        const amountIn = parseFloat(userBalance);
+        const decimals = TOKENS[token.tokenName]?.decimals || 18;
+        const amountInWei = BigInt(Math.floor(amountIn * 10**decimals));
+        
+        // Step 1: Token -> STATE
+        const path1 = [tokenAddress, stateAddress];
+        const amounts1 = await routerContract.getAmountsOut(amountInWei, path1);
+        const stateAmountWei = amounts1[amounts1.length - 1];
+        
+        // Step 2: STATE -> wrapped native
+        const path2 = [stateAddress, wplsAddress];
+        const amounts2 = await routerContract.getAmountsOut(stateAmountWei, path2);
+        const plsAmountWei = amounts2[amounts2.length - 1];
+        
+        return Number(plsAmountWei) / 10**18;
+    } catch (error) {
+        console.error(`Error calculating AMM numeric value for ${token.tokenName}:`, error);
+        return 0;
+    }
+}
+
+export async function calculateStateAmmPlsValueNumeric(stateBalance, routerContract, TOKENS, chainId) {
+    if (!stateBalance || parseFloat(stateBalance) <= 0) {
+        return 0;
+    }
+
+    if (!routerContract) {
+        return 0;
+    }
+
+    try {
+        // Determine wrapped native token based on chain
+        let wrappedNativeKey = "Wrapped Pulse";
+        if (chainId === 146) wrappedNativeKey = "Wrapped Sonic";
+        else if (chainId === 137) wrappedNativeKey = "Wrapped Matic";
+        else if (chainId === 1) wrappedNativeKey = "Wrapped Ether";
+
+        const stateAddress = TOKENS["STATE"]?.address;
+        const wplsAddress = TOKENS[wrappedNativeKey]?.address;
+        
+        if (!stateAddress || !wplsAddress) {
+            return 0;
+        }
+
+        const amountIn = parseFloat(stateBalance);
+        const amountInWei = BigInt(Math.floor(amountIn * 10**18));
+        const path = [stateAddress, wplsAddress];
+        
+        const amounts = await routerContract.getAmountsOut(amountInWei, path);
+        const amountOutWei = amounts[amounts.length - 1];
+        
+        return Number(amountOutWei) / 10**18;
+    } catch (error) {
+        console.error('Error calculating STATE AMM value:', error);
+        return 0;
+    }
+}

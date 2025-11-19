@@ -5,13 +5,19 @@ import { ethers } from "ethers";
 import toast from "react-hot-toast";
 import { notifyError, notifySuccess } from "../../Constants/Constants";
 import { TokensDetails } from "../../data/TokensDetails";
-import { formatWithCommas } from "../../Constants/Utils";
+import { formatWithCommas, calculateStateAmmPlsValueNumeric } from "../../Constants/Utils";
+import { PULSEX_ROUTER_ADDRESS, PULSEX_ROUTER_ABI } from "../../Constants/Constants";
 import { getRuntimeConfigSync } from "../../Constants/RuntimeConfig";
+import { useChainId } from "wagmi";
+import { useAllTokens } from "../Swap/Tokens";
 
 export default function BuyBurnSetupPage() {
-  const { BuyAndBurnController, AuctionContract } = useContractContext();
+  const chainId = useChainId();
+  const TOKENS = useAllTokens();
+  const { BuyAndBurnController, AuctionContract, signer } = useContractContext();
   const { getStateTokenBalanceAndSave } = useSwapContract();
   const [activeStep, setActiveStep] = useState(2);
+  const [stateOutPlsValue, setStateOutPlsValue] = useState(null);
   const [loading, setLoading] = useState(false);
   const [statusLoading, setStatusLoading] = useState(false);
   const [sendingPls, setSendingPls] = useState(false);
@@ -57,6 +63,34 @@ export default function BuyBurnSetupPage() {
       return saved - current; // same as DetailsInfo second value
     } catch { return null; }
   }, [savedStateTokenBalance, stateTokenRow]);
+
+  // Calculate AMM PLS value for STATE Out
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!signer || chainId !== 369 || stateOutValue == null) {
+        if (!cancelled) setStateOutPlsValue(stateOutValue === 0 ? 0 : null);
+        return;
+      }
+      if (stateOutValue <= 0) {
+        if (!cancelled) setStateOutPlsValue(0);
+        return;
+      }
+      try {
+        const routerContract = new ethers.Contract(
+          PULSEX_ROUTER_ADDRESS,
+          PULSEX_ROUTER_ABI,
+          signer.provider
+        );
+        const plsValue = await calculateStateAmmPlsValueNumeric(stateOutValue, routerContract, TOKENS, chainId);
+        if (!cancelled) setStateOutPlsValue(plsValue);
+      } catch (error) {
+        console.error('Error calculating STATE Out PLS value:', error);
+        if (!cancelled) setStateOutPlsValue(0);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [stateOutValue, signer, chainId, TOKENS]);
 
   // Step 2: Setup SWAP vault allowance on controller (governance-only)
   const [allowanceAmount, setAllowanceAmount] = useState("");
@@ -637,11 +671,11 @@ export default function BuyBurnSetupPage() {
                 </div>
                 <div className="col-md-3">
                   <div className="p-3 rounded bg-secondary bg-opacity-10 h-100">
-                    <div className="small text-white mb-1">STATE Out</div>
+                    <div className="small text-white mb-1">PLS to Burn (STATE Out)</div>
                     <div className="d-flex align-items-center gap-2 w-100">
-                      <i className="bi bi-arrow-up-right-circle text-warning" />
+                      <i className="bi bi-coin text-warning" />
                       <span className="fw-semibold" style={{ color: "#ff4081" }}>
-                        {stateOutValue == null ? '—' : formatWithCommas(stateOutValue)}
+                        {stateOutValue == null ? '—' : formatWithCommas(stateOutValue)} STATE
                       </span>
                       <button
                         type="button"
@@ -651,6 +685,12 @@ export default function BuyBurnSetupPage() {
                       >
                         <i className="bi bi-arrow-clockwise" />
                       </button>
+                    </div>
+                    <div className="d-flex align-items-center gap-2 w-100 mt-1">
+                      <i className="bi bi-fire text-danger" />
+                      <span className="fw-semibold text-success">
+                        {stateOutPlsValue == null ? '—' : formatWithCommas(Math.trunc(stateOutPlsValue))} PLS
+                      </span>
                     </div>
                     {/* Using same integration pattern as DetailsInfo: savedStateTokenBalance - DavVault */}
                   </div>

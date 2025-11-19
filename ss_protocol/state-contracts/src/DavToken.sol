@@ -9,6 +9,7 @@ import "./libraries/ReferralCodeLib.sol";
 import "./libraries/Distribution.sol";
 import "./libraries/TimeUtilsLib.sol";
 import "./interfaces/IAuctionAdmin.sol";
+import "./interfaces/IPulseXRouter02.sol";
 // Burn-to-claim feature removed: BurnLibrary integration deleted
 
 // Interfaces for ROI calculation
@@ -188,6 +189,10 @@ contract DAV_V3 is
     ///      Critical for portfolio value assessment in claimReward() ROI verification
     address public swapContract;
     
+    /// @notice PulseX Router address for AMM price calculations
+    /// @dev Used in getROI() to calculate actual swap values via getAmountsOut()
+    address public pulsexRouter;
+    
     /// @notice AuctionAdmin contract address
     /// @dev Manages development fee wallet registry and protocol-wide governance transfers
     ///      Only AuctionAdmin can call transferGovernanceImmediate() with 7-day timelock enforcement
@@ -277,6 +282,7 @@ contract DAV_V3 is
         address _auctionAdmin,
         address _buyAndBurnController,
         address _swapContract,
+        address _pulsexRouter,
         string memory tokenName,
         string memory tokenSymbol // Should be "pDAV1" for mainnet
     ) ERC20(tokenName, tokenSymbol) Ownable(msg.sender) {
@@ -284,13 +290,15 @@ contract DAV_V3 is
             _stateToken != address(0) &&
                 _auctionAdmin != address(0) &&
                 _buyAndBurnController != address(0) &&
-                _swapContract != address(0),
+                _swapContract != address(0) &&
+                _pulsexRouter != address(0),
             "Addresses cannot be zero"
         );
         governance = _gov;
         auctionAdmin = _auctionAdmin;
         buyAndBurnController = _buyAndBurnController;
         swapContract = _swapContract;
+        pulsexRouter = _pulsexRouter;
         
         // Mint initial governance allocation (2,000 DAV)
         _mint(_gov, INITIAL_GOV_MINT);
@@ -1094,9 +1102,10 @@ contract DAV_V3 is
         // STEP 1: Calculate STATE value from user's wallet
         uint256 totalStateValue = StateToken.balanceOf(user);
         
-        // Add auction token values converted to STATE
-        if (swapContract != address(0)) {
+        // Add auction token values converted to STATE using AMM
+        if (swapContract != address(0) && pulsexRouter != address(0)) {
             ISWAP_V3 swap = ISWAP_V3(swapContract);
+            IPulseXRouter02 router = IPulseXRouter02(pulsexRouter);
             
             // Loop through registered auction tokens (max 50, early exit when exhausted)
             for (uint256 i = 0; i < 50; i++) {
@@ -1107,14 +1116,17 @@ contract DAV_V3 is
                     uint256 userTokenBalance = IERC20(auctionToken).balanceOf(user);
                     
                     if (userTokenBalance > 0) {
-                        // Get the ratio: STATE per auction token (18 decimals)
-                        try swap.getRatioPrice(auctionToken) returns (uint256 ratio) {
-                            if (ratio > 0) {
-                                // Convert auction tokens to STATE value
-                                totalStateValue += (userTokenBalance * ratio) / 1e18;
+                        // Use AMM to get actual swap value (Token -> STATE)
+                        address[] memory path = new address[](2);
+                        path[0] = auctionToken;
+                        path[1] = STATE_TOKEN;
+                        
+                        try router.getAmountsOut(userTokenBalance, path) returns (uint[] memory amounts) {
+                            if (amounts.length > 1 && amounts[1] > 0) {
+                                totalStateValue += amounts[1];
                             }
                         } catch {
-                            // Skip tokens with no pool or ratio errors
+                            // Skip tokens with no pool or AMM errors
                         }
                     }
                 } catch {
