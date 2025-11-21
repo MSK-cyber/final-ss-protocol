@@ -11,16 +11,16 @@ export const CHAIN_IDS = {
 // Contract addresses organized by chain
 export const CONTRACT_ADDRESSES = {
     [CHAIN_IDS.PULSECHAIN]: {
-        DAV_TOKEN: getAddress('contracts.core.DAV_V3', "0x01544bb54b4DEC0dAdbD8876C4C6C49952Ec3DaE"),
-    STATE_TOKEN: getAddress('contracts.core.STATE_V3', "0xD3a2771DfEEC9555D1946CBcaA8552efE221d0e8"),
-    AUCTION: getAddress('contracts.core.SWAP_V3', "0x27Bba59282CF6a5ABBef336A8cbD9ff068C4F8C1"),
+        DAV_TOKEN: getAddress('contracts.core.DAV_V3', "0xE843FE90dF63659d1957237ee8E91232Eedd36B3"),
+    STATE_TOKEN: getAddress('contracts.core.STATE_V3', "0xd290bC9cFaEdf2A90174f669BF9Aad7E71180451"),
+    AUCTION: getAddress('contracts.core.SWAP_V3', "0xad63be034EB210e8870Ddb22541856f96302C344"),
         LP_HELPER: getAddress('contracts.utilities.LPHelper', ""), // Deprecated - use SWAP_V3.createPoolOneClick()
         LIQUIDITY_MANAGER: getAddress('contracts.utilities.LiquidityManager', ""), // TODO: Add deployed address
-    BUY_BURN_CONTROLLER: getAddress('contracts.support.BuyAndBurnController', "0x48626c6c0Db922fb093dcccB3a867BAA78B8EF47"),
+    BUY_BURN_CONTROLLER: getAddress('contracts.support.BuyAndBurnController', "0xe90444017e9349Dd62abC09FE26e6907E6350C56"),
         AUCTION_METRICS: getAddress('contracts.support.AuctionMetrics', ""), // Not deployed in this sequence
-        SWAP_LENS: getAddress('contracts.support.SwapLens', "0x75001A4FE1Be73e4B1CD6d952768DE3c71dD1013"),
-        AIRDROP_DISTRIBUTOR: getAddress('contracts.stages.AirdropDistributor', "0x619676128d81eD8b522115234ade2912F21594d9"),
-        AUCTION_ADMIN: getAddress('contracts.stages.AuctionAdmin', "0xC8E1EC71Af0Fdab28A451D3549E2d64394035b9C"),
+        SWAP_LENS: getAddress('contracts.support.SwapLens', "0xAF2190CC157b184A371016Ca0EA471D6bFdbF541"),
+        AIRDROP_DISTRIBUTOR: getAddress('contracts.stages.AirdropDistributor', "0x5346B394b5b36D6d9f1fE4785D56C0D4644085d3"),
+        AUCTION_ADMIN: getAddress('contracts.stages.AuctionAdmin', "0x5094FA04929684b6904bb9184f813D686906533a"),
     },
     [CHAIN_IDS.POLYGON]: {
         DAV_TOKEN: "", 

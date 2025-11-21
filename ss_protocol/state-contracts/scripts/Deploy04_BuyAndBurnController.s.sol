@@ -7,15 +7,15 @@ import {BuyAndBurnController_V2} from "../src/BuyAndBurnController_V2.sol";
 
 contract Deploy04_BuyAndBurnController is Script {
     // Update these addresses after previous deployments
-    address constant STATE_V3_ADDRESS = 0x72f55666a5CfB5a7C179F9E829402C34bd0708Bd; // STATE_V3 from Deploy02
-    address constant SWAP_V3_ADDRESS = 0x329390c539008885491a09Df6798267e643182A1; // SWAP_V3 from Deploy01
-    address constant AUCTION_ADMIN_ADDRESS = 0x3F3350E7Cc9F1309182E3280eF9aBB4d042d6aB4; // AuctionAdmin from Deploy03
+    address constant STATE_V3_ADDRESS = 0xd290bC9cFaEdf2A90174f669BF9Aad7E71180451; // STATE_V3 from Deploy02
+    address constant SWAP_V3_ADDRESS = 0xad63be034EB210e8870Ddb22541856f96302C344; // SWAP_V3 from Deploy01
+    address constant AUCTION_ADMIN_ADDRESS = 0x5094FA04929684b6904bb9184f813D686906533a; // AuctionAdmin from Deploy03
 
     // PulseChain Mainnet addresses
     address constant WPLS = 0xA1077a294dDE1B09bB078844df40758a5D0f9a27;
     address constant PULSEX_ROUTER = 0x98bf93ebf5c380C0e6Ae8e192A7e2AE08edAcc02;
     address constant PULSEX_FACTORY = 0x1715a3E4A142d8b698131108995174F37aEBA10D;
-    address constant GOV_ADDRESS = 0x9FA004E13e780EF5b50ca225ad5DCD4D0Fe9ed70;
+    address constant GOV_ADDRESS = 0xBAaB2913ec979d9d21785063a0e4141e5B787D28;
 
     function run() external {
         require(STATE_V3_ADDRESS != address(0), "Must update STATE_V3_ADDRESS first");

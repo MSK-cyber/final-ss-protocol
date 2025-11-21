@@ -944,20 +944,30 @@ export const DavProvider = ({ children }) => {
         }
       } catch {}
       try {
-        // 2) ROI gate: if on-chain getROI exists and indicates false, surface a friendly message and skip
+        // 2) ROI gate: allow claim if EITHER on-chain ROI% >= 100 OR client/UI ROI% >= 100
+        const clientPct = Number((data?.roiClientPercentage ?? data?.roiPercentage) || 0);
+        let onChainPct = null;
+        let totalValuePls = null;
+        let requiredPls = null;
         if (typeof davRead?.getROI === 'function') {
           const res = await davRead.getROI(address).catch(() => null);
           if (res && Array.isArray(res) && res.length >= 4) {
-            const totalValuePls = parseFloat(ethers.formatUnits(res[0] ?? 0n, 18));
-            const requiredPls = parseFloat(ethers.formatUnits(res[1] ?? 0n, 18));
-            const meets = Boolean(res[2]);
-            if (!meets) {
-              const missing = Math.max(0, Math.floor(requiredPls - totalValuePls));
-              notifyError(`ROI not met yet. Need ~${missing} more to qualify`);
-              setisClaiming(false);
-              return;
-            }
+            onChainPct = Number(res[3] ?? 0);
+            try { totalValuePls = parseFloat(ethers.formatUnits(res[0] ?? 0n, 18)); } catch {}
+            try { requiredPls = parseFloat(ethers.formatUnits(res[1] ?? 0n, 18)); } catch {}
           }
+        }
+
+        const chainOk = (onChainPct !== null) ? (onChainPct >= 100) : false;
+        const clientOk = Number.isFinite(clientPct) ? (clientPct >= 100) : false;
+        if (!chainOk && !clientOk) {
+          const missing = (Number.isFinite(requiredPls) && Number.isFinite(totalValuePls))
+            ? Math.max(0, Math.floor(requiredPls - totalValuePls))
+            : 0;
+          const showPct = (onChainPct !== null) ? onChainPct : clientPct;
+          notifyError(`ROI not met yet (${showPct}%). Need ~${missing} more PLS to reach 100%`);
+          setisClaiming(false);
+          return;
         }
       } catch {}
 

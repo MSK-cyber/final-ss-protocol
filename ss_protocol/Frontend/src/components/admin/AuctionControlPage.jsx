@@ -11,21 +11,59 @@ export default function AuctionControlPage() {
   const loadStatus = async () => {
     if (!AuctionContract) return;
     try {
-      if (SwapLens && AuctionContract?.target) {
-        const res = await SwapLens.getScheduleConfig(AuctionContract.target);
-        const [isSet, start, daysLimit, scheduledCount] = res;
-        setStatus({ scheduled: Boolean(isSet), start: Number(start), daysLimit: Number(daysLimit), count: Number(scheduledCount) });
-      } else {
-        // Fallback to tokenCount only
-        const cnt = Number(await AuctionContract.tokenCount?.().catch(() => 0));
-        setStatus((prev) => ({ ...prev, count: cnt }));
+      const contractAddr = AuctionContract?.target || AuctionContract?.address;
+      let scheduled = false;
+      let start = 0;
+      let daysLimit = 0;
+      let scheduledCount = 0;
+
+      if (SwapLens && contractAddr) {
+        try {
+          const res = await SwapLens.getScheduleConfig(contractAddr);
+          if (Array.isArray(res) && res.length >= 4) {
+            const [isSet, startRaw, daysLimitRaw, countRaw] = res;
+            start = Number(startRaw);
+            daysLimit = Number(daysLimitRaw);
+            scheduledCount = Number(countRaw);
+            scheduled = Boolean(isSet);
+          }
+        } catch (e) {
+          console.warn('SwapLens getScheduleConfig failed, falling back', e);
+        }
       }
+
+      // Fallback heuristics if schedule flag not directly obtained but data implies initialization
+      if (!scheduled) {
+        try {
+          // tokenCount indicates pools registered; scheduleSize stored internally
+          const cnt = Number(await AuctionContract.tokenCount?.().catch(() => 0));
+          if (cnt > 0) scheduledCount = cnt;
+          // Attempt reading today token; non-zero token address implies schedule configured
+          if (AuctionContract.getTodayToken) {
+            const today = await AuctionContract.getTodayToken().catch(() => [ethers.ZeroAddress, false]);
+            const tokenAddr = Array.isArray(today) ? today[0] : ethers.ZeroAddress;
+            if (tokenAddr && tokenAddr !== ethers.ZeroAddress) scheduled = true;
+          }
+          // If we have start time & days limit loaded earlier and counts, infer scheduled
+          if (!scheduled && start > 0 && daysLimit > 0 && scheduledCount > 0) scheduled = true;
+          // Minimal heuristic: if count > 0 and start==0 (already started, struct consumed) mark scheduled
+          if (!scheduled && scheduledCount > 0) scheduled = true;
+        } catch {}
+      }
+
+      setStatus({ scheduled, start, daysLimit, count: scheduledCount });
     } catch (e) {
       console.warn("Failed to load schedule", e);
     }
   };
 
   useEffect(() => { loadStatus(); }, [AuctionContract]);
+
+  // Poll periodically to reflect schedule state without manual refresh
+  useEffect(() => {
+    const id = setInterval(() => { loadStatus(); }, 15000); // 15s poll
+    return () => clearInterval(id);
+  }, [AuctionContract]);
 
   const startAuction = async (e) => {
     e.preventDefault();
@@ -35,7 +73,7 @@ export default function AuctionControlPage() {
     }
     setLoading(true);
     try {
-  // Contract calculates next Pakistan 11:00 PM internally; no params needed
+  // Contract calculates next GMT+2 8:00 AM internally; no params needed
       const tx = await AuctionContract.startAuctionWithAutoTokens();
       toast.success(`Start auction tx sent: ${tx.hash}`, { duration: 12000 });
       await tx.wait();
@@ -71,21 +109,27 @@ export default function AuctionControlPage() {
                     <div className="alert alert-info mb-0">
                       <div>
                         <i className="bi bi-clock-history me-2"></i>
-                        <strong>Auto-Scheduled Start Time:</strong> 9:00 PM GMT+2
+                        <strong>Auto-Scheduled Start Time:</strong> 8:00 AM GMT+2
                       </div>
-                      <small className="d-block mt-1">The auction will automatically start at 9:00 PM GMT+2 (Nov 11, 2025 - 19:00 UTC)</small>
+                      <small className="d-block mt-1">The auction will automatically start at 8:00 AM GMT+2 (Nov 22, 2025 - 06:00 UTC)</small>
                     </div>
                   </div>
                   <div className="col-md-3">
-                    <button 
-                      className="btn btn-primary w-100 btn-lg" 
+                    <button
+                      className="btn btn-primary w-100 btn-lg"
                       type="submit"
-                      disabled={loading || !AuctionContract}
+                      disabled={loading || !AuctionContract || status.scheduled}
+                      title={status.scheduled ? "Auction initialized" : "Start auction system"}
                     >
                       {loading ? (
                         <>
-                          <span className="spinner-border spinner-border-sm me-2"/>
+                          <span className="spinner-border spinner-border-sm me-2" />
                           Starting...
+                        </>
+                      ) : status.scheduled ? (
+                        <>
+                          <span role="img" aria-label="initialized" className="me-2">✅</span>
+                          Auction Initialized
                         </>
                       ) : (
                         <>

@@ -7,12 +7,13 @@ import {DAV_V3} from "../src/DavToken.sol";
 
 contract Deploy05_DAV_V3 is Script {
     // Update these addresses after previous deployments
-    address constant STATE_V3_ADDRESS = 0x72f55666a5CfB5a7C179F9E829402C34bd0708Bd; // STATE_V3 from Deploy02
-    address constant AUCTION_ADMIN_ADDRESS = 0x3F3350E7Cc9F1309182E3280eF9aBB4d042d6aB4; // AuctionAdmin from Deploy03
-    address constant BUY_AND_BURN_ADDRESS = 0xF6Cd74d4DEdB69bE6824F51d669D5F3483962335; // BuyAndBurn from Deploy04
-    address constant SWAP_V3_ADDRESS = 0x329390c539008885491a09Df6798267e643182A1; // SWAP_V3 from Deploy01
-    address constant PULSEX_ROUTER_ADDRESS = 0x165C3410fC91EF562C50559f7d2289fEbed552d9; // PulseX Router V2
-    address constant GOV_ADDRESS = 0x9FA004E13e780EF5b50ca225ad5DCD4D0Fe9ed70;
+    address constant STATE_V3_ADDRESS = 0xd290bC9cFaEdf2A90174f669BF9Aad7E71180451; // STATE_V3 from Deploy02
+    address constant AUCTION_ADMIN_ADDRESS = 0x5094FA04929684b6904bb9184f813D686906533a; // AuctionAdmin from Deploy03
+    address constant BUY_AND_BURN_ADDRESS = 0xe90444017e9349Dd62abC09FE26e6907E6350C56; // BuyAndBurn from Deploy04
+    address constant SWAP_V3_ADDRESS = 0xad63be034EB210e8870Ddb22541856f96302C344; // SWAP_V3 from Deploy01
+    address constant PULSEX_ROUTER_ADDRESS = 0x98bf93ebf5c380C0e6Ae8e192A7e2AE08edAcc02; // PulseX Router V2 (matches SWAP_V3)
+    address constant WPLS_ADDRESS = 0xA1077a294dDE1B09bB078844df40758a5D0f9a27; // WPLS token address
+    address constant GOV_ADDRESS = 0xBAaB2913ec979d9d21785063a0e4141e5B787D28;
 
     function run() external {
         require(STATE_V3_ADDRESS != address(0), "Must update STATE_V3_ADDRESS first");
@@ -30,6 +31,7 @@ contract Deploy05_DAV_V3 is Script {
         console.log("BuyAndBurnController Address:", BUY_AND_BURN_ADDRESS);
         console.log("SWAP_V3 Address:", SWAP_V3_ADDRESS);
         console.log("PulseX Router Address:", PULSEX_ROUTER_ADDRESS);
+        console.log("WPLS Address:", WPLS_ADDRESS);
         console.log("");
 
         vm.startBroadcast();
@@ -42,6 +44,7 @@ contract Deploy05_DAV_V3 is Script {
             BUY_AND_BURN_ADDRESS,     // _buyAndBurnController (receives 80% liquidity + ROI calculation)
             SWAP_V3_ADDRESS,          // _swapContract (for ROI calculations)
             PULSEX_ROUTER_ADDRESS,    // _pulsexRouter (for AMM price calculations)
+            WPLS_ADDRESS,             // _wpls (for STATE->PLS conversions)
             "PulseDAV",              // tokenName
             "pDAV1"                   // tokenSymbol
         );

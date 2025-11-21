@@ -5,31 +5,31 @@
   "factory": "0x1715a3E4A142d8b698131108995174F37aEBA10D",
   "baseToken": "0xA1077a294dDE1B09bB078844df40758a5D0f9a27",
   "addresses": {
-    "SWAP_V3": "0x27Bba59282CF6a5ABBef336A8cbD9ff068C4F8C1",
-    "STATE_V3": "0xD3a2771DfEEC9555D1946CBcaA8552efE221d0e8",
-    "DAV_V3": "0x01544bb54b4DEC0dAdbD8876C4C6C49952Ec3DaE",
-    "SwapLens": "0x75001A4FE1Be73e4B1CD6d952768DE3c71dD1013",
+    "SWAP_V3": "0xad63be034EB210e8870Ddb22541856f96302C344",
+    "STATE_V3": "0xd290bC9cFaEdf2A90174f669BF9Aad7E71180451",
+    "DAV_V3": "0xE843FE90dF63659d1957237ee8E91232Eedd36B3",
+    "SwapLens": "0xAF2190CC157b184A371016Ca0EA471D6bFdbF541",
     "AuctionMetrics": "",
-  "BuyAndBurnController": "0x48626c6c0Db922fb093dcccB3a867BAA78B8EF47",
-    "AirdropDistributor": "0x619676128d81eD8b522115234ade2912F21594d9",
-    "AuctionAdmin": "0xC8E1EC71Af0Fdab28A451D3549E2d64394035b9C",
+  "BuyAndBurnController": "0xe90444017e9349Dd62abC09FE26e6907E6350C56",
+    "AirdropDistributor": "0x5346B394b5b36D6d9f1fE4785D56C0D4644085d3",
+    "AuctionAdmin": "0x5094FA04929684b6904bb9184f813D686906533a",
     "LPHelper": ""
   },
   "deployment": {
-    "blocks": "25009018-25009030",
-    "gasUsed": 8300000,
-    "cost": "1184 PLS",
-    "date": "2025-11-13",
+    "blocks": "25079125-25079284",
+    "gasUsed": 15300000,
+    "cost": "5577 PLS",
+    "date": "2025-11-21",
     "verified": true
   },
   "transactions": {
-    "SWAP_V3": "0x0ca6f8b2e2c33d73a1f4e1d0e9fc1e485c1fd4f2dd6ba11c34c4cf3e9bb1a4d7",
-    "STATE_V3": "0x56d2b26caf8869f47bbd72de8758ff90dfbdb08e3bfc7b30a07cbb6a7f5cfc8a",
-    "AuctionAdmin": "0x9b90e98cf8a06dc08fe7d48d3c23b4e6ecf91eaa6d0fc1eb87e0afd3e1df50f3",
-    "BuyAndBurnController": "0xda5ccda31ea2e652b1af554b5cec13d1460236714f2aade8f9bc2a685563c4da",
-    "DAV_V3": "0x2401f1e9b925b3f2dfd802226b4a994a373b41e6cf697e2842cb2e40cf994ec4",
+    "SWAP_V3": "0x8565e896b7c24b809eddc76ebf6ccb142cb569a3e58acbcb033e05af06494e1f",
+    "STATE_V3": "0x9fb492d143577e23367f777b97048958e5d7f64571887b0e84c7f3335b5b5dd9",
+    "AuctionAdmin": "0x3848902138809722db0e7b286e60c1294cad32c923410985429174e55399b2e5",
+    "BuyAndBurnController": "0x37ded8c15d2c959f281bdfcd21e77b0a7407dffa731cd18fd27a7005a21ea81f",
+    "DAV_V3": "0x68738a5ffb3d837d1b9abc95f5f8f2b3aed1283d1d3be6705b36bedec3dee6ab",
     "LPHelper": "",
-    "AirdropDistributor": "0xf734cbb851b6f36ef892af94d422cd4eeabf2a316ab13783809241453012963b",
-    "SwapLens": "0xd6bf5963372336ed76ad05fc98544c3c7dbc75fbdaf568042682aa0863465ea8"
+    "AirdropDistributor": "0x2892dda86793e18aa3d094c6108b426798114da519f8949b06b0c1907e5e6ab3",
+    "SwapLens": "0xeca18f83169fa0d34bfe1ff43aa99420c4e0dd0d5ae2fdc64f5a8ba8712cb9a0"
   }
 }

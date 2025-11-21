@@ -24,7 +24,7 @@ export async function detectAuctionDuration(auctionContract, tokenAddress) {
     if (!auctionContract || typeof auctionContract.getAuctionTimeLeft !== 'function' || typeof auctionContract.isAuctionActive !== 'function') {
   console.warn('auctionTiming.detectAuctionDuration: auctionContract not ready');
   // Prefer sane defaults that match on-chain library if unknown
-  return cachedAuctionDuration || 7200; // 2 hours
+  return cachedAuctionDuration || 1800; // 30 minutes
     }
     // Check if we have a fresh cached value
     if (cachedAuctionDuration && Date.now() - lastDetectionTime < CACHE_DURATION) {
@@ -41,7 +41,7 @@ export async function detectAuctionDuration(auctionContract, tokenAddress) {
     }
 
     if (!tokenAddress || !ethers.isAddress(tokenAddress)) {
-  return cachedAuctionDuration || 7200;
+  return cachedAuctionDuration || 1800;
     }
 
     let timeLeftSeconds = 0;
@@ -50,7 +50,7 @@ export async function detectAuctionDuration(auctionContract, tokenAddress) {
       timeLeftSeconds = Number(timeLeft);
     } catch (e) {
       console.warn('detectAuctionDuration: getAuctionTimeLeft failed; using defaults', e?.message || e);
-      return cachedAuctionDuration || 7200;
+      return cachedAuctionDuration || 1800;
     }
     
     // Check if auction is active (guard decode errors)
@@ -112,10 +112,10 @@ export async function detectAuctionDuration(auctionContract, tokenAddress) {
       console.log(`⚠️ Estimated auction duration: ${closest} seconds based on time left`);
     }
     
-    return cachedAuctionDuration || 7200; // Default to 2 hours if unable to detect
+    return cachedAuctionDuration || 1800; // Default to 30 minutes if unable to detect
   } catch (error) {
     console.warn('Error detecting auction duration:', error?.message || error);
-    return cachedAuctionDuration || 7200; // Return cached or default
+    return cachedAuctionDuration || 1800; // Return cached or default
   }
 }
 
@@ -198,9 +198,9 @@ export async function getAuctionTiming(auctionContract, tokenAddress = null) {
   try {
     if (!auctionContract) {
       return {
-        duration: 7200,
+        duration: 1800,
         interval: 0,
-        durationFormatted: '2 hours',
+        durationFormatted: '30 minutes',
         intervalFormatted: '0 seconds',
       };
     }
@@ -264,9 +264,9 @@ export async function getAuctionTiming(auctionContract, tokenAddress = null) {
   } catch (error) {
     console.warn('Error getting auction timing:', error?.message || error);
     return {
-      duration: 300,
+      duration: 1800,
       interval: 0,
-      durationFormatted: '5 minutes',
+      durationFormatted: '30 minutes',
       intervalFormatted: '0 seconds',
     };
   }
@@ -327,27 +327,27 @@ export function invalidateTimingCache() {
 }
 
 // ===== Manual schedule support =====
-// Anchor: 2025-11-11 21:00 GMT+2 = 2025-11-11 19:00:00 UTC
+// Anchor: 2025-11-22 08:00 GMT+2 = 2025-11-22 06:00:00 UTC
 let MANUAL_ANCHOR_UTC = 0;
 try {
-  const ts = Date.parse('2025-11-11T19:00:00Z');
+  const ts = Date.parse('2025-11-22T06:00:00Z');
   if (!Number.isNaN(ts)) MANUAL_ANCHOR_UTC = Math.floor(ts / 1000);
 } catch {}
 if (!MANUAL_ANCHOR_UTC) {
-  // Fallback hardcoded epoch if Date parsing unavailable (Nov 11, 2025 19:00:00 UTC)
-  // This is 1731348000 if computed; keep zero if unknown to force recompute by caller
-  MANUAL_ANCHOR_UTC = 1731348000;
+  // Fallback hardcoded epoch if Date parsing unavailable (Nov 22, 2025 06:00:00 UTC)
+  // This is 1732254000 if computed; keep zero if unknown to force recompute by caller
+  MANUAL_ANCHOR_UTC = 1732254000;
 }
 
 /**
- * Compute manual auction phase from a fixed anchor (21:00 GMT+2 on Nov 11, 2025 = 19:00 UTC).
- * - duration: 2h (7200)
+ * Compute manual auction phase from a fixed anchor (08:00 GMT+2 on Nov 22, 2025 = 06:00 UTC).
+ * - duration: 30min (1800)
  * - interval: 0 (continuous auctions)
- * - slot = 2h (duration + interval)
+ * - slot = 15min (duration + interval)
  * Returns { phase: 'active'|'interval', secondsLeft, phaseEndAt }
  */
 export function computeManualPhase(nowSec, options = {}) {
-  const duration = Number(options.duration ?? 7200);
+  const duration = Number(options.duration ?? 1800);
   const interval = Number(options.interval ?? 0);
   const slot = duration + interval;
   const anchor = Number(options.anchorUtc ?? MANUAL_ANCHOR_UTC);

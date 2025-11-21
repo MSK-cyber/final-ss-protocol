@@ -149,6 +149,11 @@ contract DAV_V3 is
     ///      Used for ROI calculations and portfolio value assessment
     address public STATE_TOKEN;
     
+    /// @notice WPLS (Wrapped PLS) token address
+    /// @dev Immutable - set once in constructor for STATE→PLS conversions
+    ///      Used in _convertStateToPLS() via AMM router.getAmountsOut()
+    address public immutable WPLS;
+    
     /// @notice DAV token expiry period (30 days from mint)
     /// @dev Tokens become inactive after expiry but complete history is preserved for transparency
     ///      Expiry tracked per-batch, allowing mixed active/expired tokens in same wallet
@@ -283,6 +288,7 @@ contract DAV_V3 is
         address _buyAndBurnController,
         address _swapContract,
         address _pulsexRouter,
+        address _wpls,
         string memory tokenName,
         string memory tokenSymbol // Should be "pDAV1" for mainnet
     ) ERC20(tokenName, tokenSymbol) Ownable(msg.sender) {
@@ -291,7 +297,8 @@ contract DAV_V3 is
                 _auctionAdmin != address(0) &&
                 _buyAndBurnController != address(0) &&
                 _swapContract != address(0) &&
-                _pulsexRouter != address(0),
+                _pulsexRouter != address(0) &&
+                _wpls != address(0),
             "Addresses cannot be zero"
         );
         governance = _gov;
@@ -299,6 +306,7 @@ contract DAV_V3 is
         buyAndBurnController = _buyAndBurnController;
         swapContract = _swapContract;
         pulsexRouter = _pulsexRouter;
+        WPLS = _wpls;
         
         // Mint initial governance allocation (2,000 DAV)
         _mint(_gov, INITIAL_GOV_MINT);
@@ -1161,51 +1169,27 @@ contract DAV_V3 is
     
     /**
      * @notice Internal helper to convert STATE amount to PLS value
-     * @dev Uses STATE/WPLS pool reserves from BuyAndBurnController
+     * @dev Uses PulseX Router's getAmountsOut() for accurate AMM pricing (same as auction token conversion)
+     * @dev WPLS address is immutable (set in constructor), no runtime validation needed
      * @param stateAmount Amount of STATE tokens to convert
      * @return plsValue Equivalent value in PLS
      */
     function _convertStateToPLS(uint256 stateAmount) internal view returns (uint256 plsValue) {
         if (stateAmount == 0) return 0;
-        if (buyAndBurnController == address(0)) return 0;
         
-        // Get STATE/WPLS pool address
-        address stateWplsPool;
-        try IBuyAndBurn(buyAndBurnController).stateWplsPool() returns (address pool) {
-            stateWplsPool = pool;
+        // Use AMM to get actual swap value (STATE -> WPLS/PLS)
+        // Both pulsexRouter and WPLS are validated in constructor
+        address[] memory path = new address[](2);
+        path[0] = STATE_TOKEN;
+        path[1] = WPLS;
+        
+        try IPulseXRouter02(pulsexRouter).getAmountsOut(stateAmount, path) returns (uint[] memory amounts) {
+            if (amounts.length > 1 && amounts[1] > 0) {
+                plsValue = amounts[1];
+            }
         } catch {
+            // Fallback to zero if AMM fails (no pool or insufficient liquidity)
             return 0;
-        }
-        
-        if (stateWplsPool == address(0)) return 0;
-        
-        // Get pool reserves
-        uint112 reserve0;
-        uint112 reserve1;
-        try IPair(stateWplsPool).getReserves() returns (uint112 r0, uint112 r1, uint32) {
-            reserve0 = r0;
-            reserve1 = r1;
-        } catch {
-            return 0;
-        }
-        
-        if (reserve0 == 0 || reserve1 == 0) return 0;
-        
-        // Determine which reserve is STATE
-        address token0;
-        try IPair(stateWplsPool).token0() returns (address t0) {
-            token0 = t0;
-        } catch {
-            return 0;
-        }
-        
-        // Calculate PLS value based on pool ratio
-        if (token0 == STATE_TOKEN) {
-            // reserve0 = STATE, reserve1 = WPLS (PLS)
-            plsValue = (stateAmount * reserve1) / reserve0;
-        } else {
-            // reserve0 = WPLS (PLS), reserve1 = STATE
-            plsValue = (stateAmount * reserve0) / reserve1;
         }
     }
 
