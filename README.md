@@ -103,14 +103,20 @@ Administrative contract with governance timelock.
 - Fee wallet percentage validation (must sum to 100%)
 
 ### 6. **BuyAndBurnController_V2**
-Manages STATE buyback and permanent burn operations.
+Manages STATE buyback and permanent burn operations with daily liquidity deepening.
 
 **Functions:**
 - PLS → WPLS conversion
 - STATE/WPLS pool creation and management
 - Optimal ratio-aware buy & burn execution
 - LP token burning (permanent liquidity lock)
-- Governance-controlled operations
+- Governance-controlled daily operations
+
+**Liquidity Model:**
+- **Initial Phase:** Thin STATE/WPLS pool for natural price discovery
+- **Daily Cycle:** Governance executes buy-and-burn using accumulated DAV mint fees
+- **Permanent Lock:** All generated LP tokens burned, removing rug risk
+- **Scaling Effect:** Pool depth increases proportionally with ecosystem activity
 
 ### 7. **SwapLens**
 Read-only view contract for efficient data aggregation.
@@ -200,12 +206,12 @@ Read-only view contract for efficient data aggregation.
 
 ### Minting Process
 
-1. **Cost:** 1,500,000 PLS per DAV token
+1. **Cost:** 3,000,000 PLS per DAV token
 2. **Fee Distribution:**
-   - 80% (1,200,000 PLS) → BuyAndBurnController
-   - 10% (150,000 PLS) → Active DAV holder pool
-   - 5% (75,000 PLS) → Development wallet
-   - 5% (75,000 PLS) → Referral code owner (optional)
+   - 80% (2,400,000 PLS) → BuyAndBurnController
+   - 10% (300,000 PLS) → Active DAV holder pool
+   - 5% (150,000 PLS) → Development wallet
+   - 5% (150,000 PLS) → Referral code owner (optional)
 
 ### Holder Rewards
 
@@ -222,8 +228,63 @@ Read-only view contract for efficient data aggregation.
 **Calculation:**
 ```solidity
 Portfolio Value = Sum of all auction token values in PLS
-Required Value = (DAV minted count) × 1,500,000 PLS
+Required Value = (DAV minted count) × 3,000,000 PLS
 Claimable = Portfolio Value ≥ Required Value
+```
+
+## 🌊 Liquidity Model & Market Dynamics
+
+### Bonded Pricing Foundation
+
+Auction tokens in the ecosystem are initially paired with STATE at a **predefined ratio**. This ratio is established by seeding liquidity with specific amounts of STATE and the auction token, effectively setting the initial market price through automated market maker (AMM) mechanics.
+
+### STATE/WPLS Pool Strategy
+
+The **STATE/WPLS pool**—the core liquidity foundation for the system—begins intentionally thin, allowing for:
+
+- **Natural Price Discovery:** Early market participants establish fair value through trading activity
+- **Higher Initial Impact:** Initial trades experience greater price impact due to shallow depth
+- **Progressive Stabilization:** Liquidity deepens systematically through protocol operations
+
+### Daily Liquidity Deepening Cycle
+
+While the protocol does not enforce automated liquidity additions on-chain, **governance executes buy-and-burn operations on a daily operational schedule**:
+
+1. **Fee Accumulation:** DAV minting activity generates PLS fees (80% of mint costs)
+2. **Conversion:** Buy-and-Burn Controller converts PLS → WPLS
+3. **STATE Purchase:** WPLS used to purchase STATE from the pool
+4. **Liquidity Addition:** STATE + WPLS paired and added to STATE/WPLS pool
+5. **Permanent Lock:** All LP tokens burned, removing rug risk and locking liquidity indefinitely
+
+### Market Evolution
+
+**Early Phase (Thin Liquidity):**
+- High price impact on trades
+- Significant slippage for large orders
+- Natural volatility enables price discovery
+- Early sellers face full AMM mechanics
+
+**Mature Phase (Deep Liquidity):**
+- Reduced slippage from increased reserves
+- Improved price stability
+- Lower transaction costs
+- Robust market structure
+
+### Key Characteristics
+
+- ✅ **Predefined Bonding:** Initial pricing set through calculated reserve ratios
+- ✅ **Intentional Bootstrap:** Thin early liquidity facilitates organic price discovery
+- ✅ **Daily Operations:** Governance-driven buy-and-burn cycles deepen liquidity consistently
+- ✅ **Permanent Lock:** LP burning removes withdrawal risk indefinitely
+- ✅ **Scalable Depth:** Pool growth scales proportionally with ecosystem activity
+- ✅ **Predictable Model:** Recurring liquidity increases create systematic depth expansion
+
+### Liquidity Formula
+
+```
+Daily Liquidity Increase = 80% × Daily DAV Minting Volume × PLS Price
+Total Locked Liquidity = Σ (Daily Additions) - fully burned, unrecoverable
+Slippage Reduction = ƒ(Pool Depth) - improves with each cycle
 ```
 
 ### Expiry System
@@ -358,6 +419,7 @@ All state-changing functions protected with `nonReentrant` modifier:
 - **Governance Timelock:** 7 days
 
 ### Limits & Constants
+
 ```solidity
 // SWAP_V3
 MAX_CYCLES_PER_TOKEN = 20        // 20 cycles per auction token
@@ -366,7 +428,7 @@ AIRDROP_PER_DAV = 10,000         // Tokens per DAV unit
 NORMAL_AUCTION_BURN_PCT = 30     // 30% burn in normal auction
 
 // DAV_V3
-DAV_MINT_COST = 1,500,000 PLS    // Cost per DAV token
+DAV_MINT_COST = 3,000,000 PLS    // Cost per DAV token
 MAX_SUPPLY = 10,000,000          // Maximum DAV tokens
 MAX_HOLDERS = 2,500              // Maximum unique wallets
 DAV_EXPIRY_DURATION = 30 days    // Time until expiry
