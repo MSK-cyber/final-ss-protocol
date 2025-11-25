@@ -386,3 +386,14 @@
   font-size: inherit;
   font-weight: inherit;
 }
+
+/* Offset only the Coming Soon preview boxes without affecting the live auction box */
+.coming-soon-offset {
+  margin-top: 22px !important; /* slight downward shift */
+}
+
+/* Slight right nudge for middle preview box to balance horizontal spacing */
+.second-box-adjust {
+  position: relative;
+  left: 6px; /* adjust this pixel value if further tuning needed */
+}

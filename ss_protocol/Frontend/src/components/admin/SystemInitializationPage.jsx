@@ -184,7 +184,7 @@ export default function SystemInitializationPage() {
   const progressPercentage = (connectedContracts / totalContracts) * 100;
   // Target contract metadata for this section (initializeCompleteSystem is called on AuctionContract)
   const initTargetAddress = AuctionContract?.target || AuctionContract?.address || addresses?.auction || "";
-  const initTargetName = "Auction Contract";
+  const initTargetName = "SWAP Contract";
 
   const copyToClipboard = async (text) => {
     try {
@@ -293,7 +293,7 @@ export default function SystemInitializationPage() {
           {!AuctionContract && (
             <div className="alert alert-danger">
               <i className="bi bi-exclamation-triangle-fill me-2"></i>
-              <strong>Auction Contract Not Connected</strong>
+              <strong>SWAP Contract Not Connected</strong>
               <p className="mb-0 small mt-1">Please ensure your wallet is connected and the contract is properly deployed.</p>
             </div>
           )}
@@ -318,7 +318,7 @@ export default function SystemInitializationPage() {
                   <div className="text-primary" style={{fontSize: '1.5rem'}}>1️⃣</div>
                   <div>
                     <h6 className="small fw-bold mb-1">Contract Connections</h6>
-                    <p className="small text-muted mb-0">All protocol contracts are linked to the main auction contract, establishing the system architecture.</p>
+                    <p className="small text-muted mb-0">All protocol contracts are linked to the main SWAP contract, establishing the system architecture.</p>
                   </div>
                 </div>
               </div>

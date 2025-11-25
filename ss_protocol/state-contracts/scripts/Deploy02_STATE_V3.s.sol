@@ -7,7 +7,7 @@ import {STATE_V3} from "../src/StateToken.sol";
 
 contract Deploy02_STATE_V3 is Script {
     // Update this address after SWAP_V3 deployment
-    address constant SWAP_V3_ADDRESS = 0xad63be034EB210e8870Ddb22541856f96302C344; // SWAP_V3 from Deploy01
+    address constant SWAP_V3_ADDRESS = 0x27a7F4Adc36A8a94696BE83519AFd391A4719C7A; // SWAP_V3 from Deploy01
     address constant GOV_ADDRESS = 0xBAaB2913ec979d9d21785063a0e4141e5B787D28;
 
     function run() external {
@@ -24,7 +24,7 @@ contract Deploy02_STATE_V3 is Script {
         
         console.log("Deploying STATE_V3...");
         // Mint 100% of supply to SWAP contract in single transaction
-        STATE_V3 stateV3 = new STATE_V3("PulseState", "pSTATE1", SWAP_V3_ADDRESS);
+        STATE_V3 stateV3 = new STATE_V3("PulseSTATE1", "pSTATE1", SWAP_V3_ADDRESS);
         
         console.log("SUCCESS: STATE_V3 deployed at:", address(stateV3));
         console.log("NOTE: Ownership automatically renounced in constructor");
@@ -36,7 +36,7 @@ contract Deploy02_STATE_V3 is Script {
         console.log("STATE_V3 Address:", address(stateV3));
         console.log("");
         console.log("Token Details:");
-        console.log("- Name: PulseState");
+        console.log("- Name: PulseSTATE1");
         console.log("- Symbol: pSTATE1");
         console.log("- Total Supply: 100 trillion tokens");
         console.log("- 100% (100 trillion tokens) minted to SWAP contract");

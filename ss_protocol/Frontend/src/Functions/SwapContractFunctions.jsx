@@ -2486,6 +2486,7 @@ export const SwapContractProvider = ({ children }) => {
               '0x8a69b83f': 'ParticipantCapReached',
               '0x5341e942': 'Step1NotCompleted',
               '0x6f312cbd': 'Step2NotCompleted',
+              '0xfe6651de': 'MustClaimAllDavAirdrops',
             };
             
             if (errorMap[selector]) {
@@ -2497,7 +2498,7 @@ export const SwapContractProvider = ({ children }) => {
         
         let simMsg = simErr?.reason || simErr?.shortMessage || simErr?.message || simErr?.toString() || "Reverse swap simulation failed";
         if ((simErr?.shortMessage || simErr?.message)?.toLowerCase?.().includes('missing revert data')) {
-          simMsg = "Simulation failed (missing revert data). Ensure your wallet is on PulseChain and connected, then retry.";
+          simMsg = "No history of normal auction participation during the last 3 cycles.";
         }
         
   // Decode known custom errors
@@ -2518,6 +2519,7 @@ export const SwapContractProvider = ({ children }) => {
         else if (errName === 'NotToday') simMsg = "Not today's window for this token.";
         else if (errName === 'Step1NotCompleted') simMsg = "Complete Step 1 (Claim) before Ratio Swap.";
         else if (errName === 'Step2NotCompleted') simMsg = "Complete Step 2 (Burn Tokens for STATE) first. Reverse Step 1 requires you to have burned auction tokens in the normal auction first.";
+        else if (errName === 'MustClaimAllDavAirdrops') simMsg = "Claim all pending DAV airdrops before performing this action.";
         else if (errName === 'PausedErr') simMsg = "Contract is paused.";
         else if (errName === 'Unauthorized') simMsg = "Unauthorized action.";
         else if (errName === 'ZeroAddr') simMsg = "Invalid zero address.";
@@ -2644,6 +2646,7 @@ export const SwapContractProvider = ({ children }) => {
               '0x8a69b83f': 'ParticipantCapReached',
               '0x5341e942': 'Step1NotCompleted',
               '0x6f312cbd': 'Step2NotCompleted',
+              '0xfe6651de': 'MustClaimAllDavAirdrops',
             };
             
             if (errorMap[selector]) {
@@ -2675,6 +2678,7 @@ export const SwapContractProvider = ({ children }) => {
         else if (errName === 'NotToday') msg = "Not today's window for this token.";
         else if (errName === 'Step1NotCompleted') msg = "Complete Step 1 (Claim Airdrop) first before burning tokens.";
         else if (errName === 'Step2NotCompleted') msg = "Complete Step 2 (Burn Tokens for STATE) first. Reverse Step 1 requires you to have burned auction tokens in the normal auction first.";
+        else if (errName === 'MustClaimAllDavAirdrops') msg = "Claim all pending DAV airdrops before performing this action.";
         else if (errName === 'PausedErr') msg = "Contract is paused.";
         else if (errName === 'Unauthorized') msg = "Unauthorized action.";
         else if (errName === 'ZeroAddr') msg = "Invalid zero address.";

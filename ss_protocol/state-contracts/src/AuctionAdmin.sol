@@ -60,7 +60,7 @@ contract AuctionAdmin is Ownable, ReentrancyGuard {
     }
     GovernanceProposal public pendingProtocolGovernance;
     
-    /// @notice Timelock duration for governance transfers (7 days)
+    /// @notice Timelock duration for governance transfers (7 days for production)
     uint256 public constant GOVERNANCE_TIMELOCK = 7 days;
     
     // ================= Development Fee Wallet System =================

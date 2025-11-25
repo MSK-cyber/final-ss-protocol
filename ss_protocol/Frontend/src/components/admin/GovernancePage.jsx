@@ -5,7 +5,7 @@ import { ContractContext } from "../../Functions/ContractInitialize";
 import AuctionAdminABI from "../../ABI/AuctionAdmin.json";
 import AuctionSwapABI from "../../ABI/AuctionSwap.fixed.json";
 import AirdropDistributorABI from "../../ABI/AirdropDistributor.json";
-import DavTokenABI from "../../ABI/DavToken.json";
+import DavTokenABI from "../../ABI/DavToken_updated.json";
 
 export default function GovernancePage() {
   const { provider, signer, contracts, AllContracts } = useContext(ContractContext);
@@ -299,22 +299,93 @@ export default function GovernancePage() {
   const fetchDavReclaimInfo = useCallback(async () => {
     try {
       const addr = resolveAddress('dav');
-      if (!addr || !provider) return setReclaimInfo({ canReclaim: null, daysRemaining: null, totalUnclaimed: null });
-      const dav = new ethers.Contract(addr, DavTokenABI, provider);
-      if (typeof dav.getReclaimInfo !== 'function') {
-        // Minimal ABI fallback (in case ABI not updated)
-        const minimal = new ethers.Contract(addr, [
-          'function getReclaimInfo() view returns (bool,uint256,uint256)'
-        ], provider);
-        const [canReclaim, daysRemaining, totalUnclaimed] = await minimal.getReclaimInfo();
-        setReclaimInfo({ canReclaim, daysRemaining, totalUnclaimed });
-      } else {
-        const { 0: canReclaim, 1: daysRemaining, 2: totalUnclaimed } = await dav.getReclaimInfo();
-        setReclaimInfo({ canReclaim, daysRemaining, totalUnclaimed });
+      
+      if (!addr) {
+        setReclaimInfo({ canReclaim: null, daysRemaining: null, totalUnclaimed: null });
+        return;
+      }
+      
+      if (!provider) {
+        setReclaimInfo({ canReclaim: null, daysRemaining: null, totalUnclaimed: null });
+        return;
+      }
+      
+      const abi = DavTokenABI.abi || DavTokenABI;
+      const dav = new ethers.Contract(addr, abi, provider);
+      
+      try {
+        // Primary on-chain view call using full ABI first
+        let raw = await dav.getReclaimInfo();
+        // If full ABI failed to decode (not thrown but undefined), try minimal ABI
+        if (!raw || (Array.isArray(raw) && raw.length === 0)) {
+          try {
+            const minimal = new ethers.Contract(addr, ["function getReclaimInfo() view returns (bool,uint256,uint256)"], provider);
+            raw = await minimal.getReclaimInfo();
+          } catch (miniErr) {
+            throw miniErr; // bubble to outer catch
+          }
+        }
+        const tuple = Array.isArray(raw) ? raw : [raw?.canReclaim, raw?.daysRemaining, raw?.totalUnclaimed];
+        const canReclaim = Boolean(tuple[0]);
+        const daysRemaining = Number(tuple[1] || 0);
+        const totalUnclaimedWei = tuple[2] !== undefined && tuple[2] !== null ? tuple[2] : 0n;
+        let totalBn;
+        try {
+          if (typeof totalUnclaimedWei === 'bigint') totalBn = totalUnclaimedWei; else totalBn = BigInt(totalUnclaimedWei.toString());
+        } catch { totalBn = 0n; }
+        console.log('[DAV getReclaimInfo] canReclaim=', canReclaim, 'daysRemaining=', daysRemaining, 'totalUnclaimedWei=', totalBn.toString());
+        setReclaimInfo({ canReclaim, daysRemaining, totalUnclaimed: totalBn });
+      } catch (contractError) {
+        // Contract call failed - implement client-side calculation as fallback
+        console.log('Contract getReclaimInfo failed, using client-side calculation');
+        
+        try {
+          // Get swap contract address
+          const swapAddr = await dav.swapContract();
+          
+          if (!swapAddr || swapAddr === ethers.ZeroAddress) {
+            setReclaimInfo({ canReclaim: false, daysRemaining: 999999, totalUnclaimed: 0n });
+            return;
+          }
+          
+          // Get auction schedule from SWAP contract
+          const swapAbi = ['function auctionSchedule() view returns (bool,uint256,uint256,uint256,uint256)'];
+          const swap = new ethers.Contract(swapAddr, swapAbi, provider);
+          const schedule = await swap.auctionSchedule();
+          
+          const scheduleSet = schedule[0];
+          const scheduleStart = schedule[1];
+          
+          if (!scheduleSet || scheduleStart === 0n) {
+            setReclaimInfo({ canReclaim: false, daysRemaining: 999999, totalUnclaimed: 0n });
+            return;
+          }
+          
+          // Calculate days since auction start
+          const currentBlock = await provider.getBlock('latest');
+          const currentTimestamp = BigInt(currentBlock.timestamp);
+          const daysSinceStart = (currentTimestamp - scheduleStart) / 86400n; // 1 day in seconds
+          
+          let canReclaim, daysRemaining;
+          if (daysSinceStart >= 3n) {
+            canReclaim = true;
+            daysRemaining = 0;
+          } else {
+            canReclaim = false;
+            daysRemaining = Number(3n - daysSinceStart);
+          }
+          
+          // Get total unclaimed from holderFunds (if accessible, otherwise 0)
+          // Fallback: cannot compute total unclaimed; present 0 for clarity
+          setReclaimInfo({ canReclaim, daysRemaining, totalUnclaimed: 0n });
+        } catch (fallbackError) {
+          console.error('Client-side calculation also failed:', fallbackError);
+          setReclaimInfo({ canReclaim: false, daysRemaining: 999999, totalUnclaimed: 0n });
+        }
       }
     } catch (e) {
-      // If it fails, keep previous state but avoid spamming logs
-      // console.warn('getReclaimInfo failed:', e?.message || e);
+      console.error('fetchDavReclaimInfo error:', e);
+      setReclaimInfo({ canReclaim: null, daysRemaining: null, totalUnclaimed: null });
     }
   }, [provider, resolveAddress]);
 
@@ -627,23 +698,41 @@ export default function GovernancePage() {
     if (!signer) return toast.error('Signer not available');
     setReclaimLoading(true);
     try {
-      const dav = new ethers.Contract(addr, DavTokenABI, signer);
-      if (typeof dav.reclaimUnclaimedRewards !== 'function') {
-        const minimal = new ethers.Contract(addr, ['function reclaimUnclaimedRewards()'], signer);
-        const tx = await minimal.reclaimUnclaimedRewards();
+      const abi = DavTokenABI.abi || DavTokenABI;
+      const dav = new ethers.Contract(addr, abi, signer);
+      // Force call sequence: attempt normal call; if estimateGas/revert undecodable, send raw tx manually.
+      let sent = false;
+      try {
+        console.log('[Reclaim] Attempting standard call with manual gasLimit');
+        const tx = await dav.reclaimUnclaimedRewards({ gasLimit: 2_000_000 });
+        sent = true;
         toast.success(`Reclaim tx sent: ${tx.hash}`);
         await tx.wait();
-      } else {
-        const tx = await dav.reclaimUnclaimedRewards();
-        toast.success(`Reclaim tx sent: ${tx.hash}`);
-        await tx.wait();
+        toast.success('Unclaimed rewards reclaimed to BuyAndBurnController');
+        await fetchDavReclaimInfo();
+      } catch (primaryError) {
+        console.warn('[Reclaim] Primary call failed, attempting forced raw transaction:', primaryError);
+        try {
+          const data = dav.interface.encodeFunctionData('reclaimUnclaimedRewards', []);
+          const forcedTx = await signer.sendTransaction({ to: addr, data, gasLimit: 2_000_000 });
+          sent = true;
+          toast.success(`Forced reclaim tx sent: ${forcedTx.hash}`);
+          await forcedTx.wait();
+          toast.success('Forced reclaim execution confirmed');
+          await fetchDavReclaimInfo();
+        } catch (forcedError) {
+          console.error('[Reclaim] Forced raw transaction failed:', forcedError);
+          const msg = forcedError?.reason || forcedError?.error?.message || forcedError?.message || 'Forced reclaim failed';
+          toast.error(msg);
+        }
       }
-      toast.success('Unclaimed rewards reclaimed to BuyAndBurnController');
-      await fetchDavReclaimInfo();
+      if (!sent) {
+        toast.error('Reclaim not sent (all attempts failed).');
+      }
     } catch (e) {
       const reason = e?.reason || e?.errorName || e?.shortMessage || e?.message || '';
-      // Show raw error without client-side interpretation/gating
-      toast.error(reason || 'Reclaim failed');
+      toast.error(reason || 'Failed to initialize reclaim');
+      console.error('Reclaim setup error:', e);
     } finally {
       setReclaimLoading(false);
     }
@@ -850,7 +939,7 @@ export default function GovernancePage() {
         </div>
         <div className="card-body p-0">
           <PauseCard
-            title="AuctionSwap Contract"
+            title="SWAP Contract"
             description="Blocks Whole Auction System and its Operations(All 5 Steps)"
             keyName="auction"
           />
@@ -871,8 +960,45 @@ export default function GovernancePage() {
         <div className="card-body">
           {/* Current Governance section removed per request */}
 
-          {/* Pending Proposal */}
+          {/* Propose New Governance */}
           <div className="card mb-3">
+            <div className="card-header">
+              <h6 className="mb-0">➕ Propose New Governance</h6>
+            </div>
+            <div className="card-body">
+              <div className="row g-3 align-items-end">
+                <div className="col-md-8">
+                  <label className="form-label small fw-bold">New Governance Address</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="0x..."
+                    value={govInput}
+                    onChange={(e) => setGovInput(e.target.value)}
+                    disabled={govLoading.propose}
+                  />
+                </div>
+                <div className="col-md-4">
+                  <button className="btn btn-primary w-100" onClick={proposeGovernance} disabled={govLoading.propose || !govInput}>
+                    {govLoading.propose ? (
+                      <>
+                        <span className="spinner-border spinner-border-sm me-2"></span>
+                        Proposing...
+                      </>
+                    ) : (
+                      <>Propose (Timelocked)</>
+                    )}
+                  </button>
+                </div>
+              </div>
+              <div className="mt-2">
+                <small className="text-muted">After proposing, wait for the timelock to expire, then confirm to apply across all protocol contracts.</small>
+              </div>
+            </div>
+          </div>
+
+          {/* Pending Proposal */}
+          <div className="card">
             <div className="card-header d-flex justify-content-between align-items-center">
               <div>
                 <h6 className="mb-0 text-uppercase">Pending Proposal</h6>
@@ -914,43 +1040,6 @@ export default function GovernancePage() {
               )}
             </div>
           </div>
-
-          {/* Propose New Governance */}
-          <div className="card">
-            <div className="card-header">
-              <h6 className="mb-0">➕ Propose New Governance</h6>
-            </div>
-            <div className="card-body">
-              <div className="row g-3 align-items-end">
-                <div className="col-md-8">
-                  <label className="form-label small fw-bold">New Governance Address</label>
-                  <input
-                    type="text"
-                    className="form-control"
-                    placeholder="0x..."
-                    value={govInput}
-                    onChange={(e) => setGovInput(e.target.value)}
-                    disabled={govLoading.propose}
-                  />
-                </div>
-                <div className="col-md-4">
-                  <button className="btn btn-primary w-100" onClick={proposeGovernance} disabled={govLoading.propose || !govInput}>
-                    {govLoading.propose ? (
-                      <>
-                        <span className="spinner-border spinner-border-sm me-2"></span>
-                        Proposing...
-                      </>
-                    ) : (
-                      <>Propose (Timelocked)</>
-                    )}
-                  </button>
-                </div>
-              </div>
-              <div className="mt-2">
-                <small className="text-muted">After proposing, wait for the timelock to expire, then confirm to apply across all protocol contracts.</small>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
 
@@ -958,7 +1047,7 @@ export default function GovernancePage() {
       <div className="card mb-4">
         <div className="card-header">
           <h5 className="card-title mb-1">🏦 Unclaimed Rewards Reclaim (DAV)</h5>
-          <small className="text-muted">After 1000 days from auction start, governance can reclaim all unclaimed holder rewards to the BuyAndBurnController.</small>
+          <small className="text-muted">Eligibility and totals are provided by the DAV contract (getReclaimInfo).</small>
         </div>
         <div className="card-body">
           <div className="row align-items-center">
@@ -970,14 +1059,20 @@ export default function GovernancePage() {
                   </span>
                 </div>
                 <small className="text-muted">
-                  {reclaimInfo.canReclaim
+                  {reclaimInfo.canReclaim === null
+                    ? 'Function not available - contract needs to be redeployed with getReclaimInfo()'
+                    : reclaimInfo.canReclaim
                     ? 'Reclaim is currently allowed.'
-                    : reclaimInfo.daysRemaining != null
-                      ? `Days remaining until eligible: ${reclaimInfo.daysRemaining}`
-                      : 'Eligibility unknown'}
+                    : reclaimInfo.daysRemaining >= 999999
+                      ? 'Function not available on deployed contract (needs redeploy with updated code)'
+                      : reclaimInfo.daysRemaining != null
+                        ? `Days remaining until eligible: ${reclaimInfo.daysRemaining}`
+                        : 'Not eligible yet'}
                 </small>
                 <small className="mt-1">
-                  Total unclaimed: {reclaimInfo.totalUnclaimed != null ? `${ethers.formatEther(reclaimInfo.totalUnclaimed)} PLS` : '—'}
+                  {reclaimInfo.totalUnclaimed != null ? (
+                    <>Total unclaimed: {ethers.formatEther(BigInt(reclaimInfo.totalUnclaimed))} PLS <span style={{opacity:0.6}}>(raw {String(reclaimInfo.totalUnclaimed)})</span></>
+                  ) : 'Total unclaimed: —'}
                 </small>
               </div>
             </div>
@@ -985,7 +1080,7 @@ export default function GovernancePage() {
               <button
                 className="btn btn-primary"
                 onClick={doReclaimUnclaimed}
-                disabled={reclaimLoading}
+                disabled={reclaimLoading || reclaimInfo.canReclaim === false}
               >
                 {reclaimLoading ? (
                   <>

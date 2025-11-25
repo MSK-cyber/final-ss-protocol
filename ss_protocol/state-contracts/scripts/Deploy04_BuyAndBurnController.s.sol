@@ -7,9 +7,9 @@ import {BuyAndBurnController_V2} from "../src/BuyAndBurnController_V2.sol";
 
 contract Deploy04_BuyAndBurnController is Script {
     // Update these addresses after previous deployments
-    address constant STATE_V3_ADDRESS = 0xd290bC9cFaEdf2A90174f669BF9Aad7E71180451; // STATE_V3 from Deploy02
-    address constant SWAP_V3_ADDRESS = 0xad63be034EB210e8870Ddb22541856f96302C344; // SWAP_V3 from Deploy01
-    address constant AUCTION_ADMIN_ADDRESS = 0x5094FA04929684b6904bb9184f813D686906533a; // AuctionAdmin from Deploy03
+    address constant STATE_V3_ADDRESS = 0x834A4eE2849E25b94A4aB6bC19D3CD0542256244; // STATE_V3 from Deploy02
+    address constant SWAP_V3_ADDRESS = 0x27a7F4Adc36A8a94696BE83519AFd391A4719C7A; // SWAP_V3 from Deploy01
+    address constant AUCTION_ADMIN_ADDRESS = 0xA001442C5147BBCbA73CafA86Ef90225086cF7e1; // AuctionAdmin from Deploy03
 
     // PulseChain Mainnet addresses
     address constant WPLS = 0xA1077a294dDE1B09bB078844df40758a5D0f9a27;

@@ -7,10 +7,10 @@ import {DAV_V3} from "../src/DavToken.sol";
 
 contract Deploy05_DAV_V3 is Script {
     // Update these addresses after previous deployments
-    address constant STATE_V3_ADDRESS = 0xd290bC9cFaEdf2A90174f669BF9Aad7E71180451; // STATE_V3 from Deploy02
-    address constant AUCTION_ADMIN_ADDRESS = 0x5094FA04929684b6904bb9184f813D686906533a; // AuctionAdmin from Deploy03
-    address constant BUY_AND_BURN_ADDRESS = 0xe90444017e9349Dd62abC09FE26e6907E6350C56; // BuyAndBurn from Deploy04
-    address constant SWAP_V3_ADDRESS = 0xad63be034EB210e8870Ddb22541856f96302C344; // SWAP_V3 from Deploy01
+    address constant STATE_V3_ADDRESS = 0x834A4eE2849E25b94A4aB6bC19D3CD0542256244; // STATE_V3 from Deploy02
+    address constant AUCTION_ADMIN_ADDRESS = 0xA001442C5147BBCbA73CafA86Ef90225086cF7e1; // AuctionAdmin from Deploy03
+    address constant BUY_AND_BURN_ADDRESS = 0x1ACC1dc6E734A0fb7ca8Ab128F3D34f20092bC11; // BuyAndBurn from Deploy04
+    address constant SWAP_V3_ADDRESS = 0x27a7F4Adc36A8a94696BE83519AFd391A4719C7A; // SWAP_V3 from Deploy01
     address constant PULSEX_ROUTER_ADDRESS = 0x98bf93ebf5c380C0e6Ae8e192A7e2AE08edAcc02; // PulseX Router V2 (matches SWAP_V3)
     address constant WPLS_ADDRESS = 0xA1077a294dDE1B09bB078844df40758a5D0f9a27; // WPLS token address
     address constant GOV_ADDRESS = 0xBAaB2913ec979d9d21785063a0e4141e5B787D28;
@@ -45,7 +45,7 @@ contract Deploy05_DAV_V3 is Script {
             SWAP_V3_ADDRESS,          // _swapContract (for ROI calculations)
             PULSEX_ROUTER_ADDRESS,    // _pulsexRouter (for AMM price calculations)
             WPLS_ADDRESS,             // _wpls (for STATE->PLS conversions)
-            "PulseDAV",              // tokenName
+            "PulseDAV1",              // tokenName
             "pDAV1"                   // tokenSymbol
         );
         
@@ -59,7 +59,7 @@ contract Deploy05_DAV_V3 is Script {
         console.log("DAV_V3 Address:", address(davV3));
         console.log("");
         console.log("Token Details:");
-        console.log("- Name: PulseDAV");
+        console.log("- Name: PulseDAV1");
         console.log("- Symbol: pDAV1");
         console.log("- Initial governance mint: 2000 DAV tokens");
         console.log("- 80% mint fees go to BuyAndBurnController");

@@ -933,44 +933,65 @@ export const DavProvider = ({ children }) => {
     if (!AllContracts?.davContract) return;
     try {
       setisClaiming(true);
-      // Preflight: basic guards to avoid on-chain reverts where possible
+
+      // 0) Prevent governance address from claiming (will revert on-chain anyway)
       try {
-        // 1) Any rewards available?
-        const claimable = await safeEarned(address);
+        if (typeof davRead?.governance === 'function') {
+          const gov = await davRead.governance().catch(() => null);
+          if (gov && gov.toLowerCase() === address?.toLowerCase()) {
+            notifyError('Governance address cannot claim rewards');
+            setisClaiming(false);
+            return;
+          }
+        }
+      } catch {}
+
+      // 1) Active DAV balance check (must have non-expired tokens)
+      try {
+        const activeBal = await safeCallBigInt('davHolds', () => davRead.getActiveBalance(address));
+        if (!activeBal || activeBal === 0n) {
+          notifyError('No active DAV balance (expired or none)');
+          setisClaiming(false);
+          return;
+        }
+      } catch {}
+
+      // 2) Claimable rewards available?
+      let claimable = 0n;
+      try {
+        claimable = await safeEarned(address);
         if (!claimable || claimable === 0n) {
           notifyError('No rewards to claim');
           setisClaiming(false);
           return;
         }
       } catch {}
+
+      // 3) On-chain ROI gate (must meet ROI). Use contract boolean instead of pct heuristics
       try {
-        // 2) ROI gate: allow claim if EITHER on-chain ROI% >= 100 OR client/UI ROI% >= 100
-        const clientPct = Number((data?.roiClientPercentage ?? data?.roiPercentage) || 0);
-        let onChainPct = null;
-        let totalValuePls = null;
-        let requiredPls = null;
         if (typeof davRead?.getROI === 'function') {
           const res = await davRead.getROI(address).catch(() => null);
           if (res && Array.isArray(res) && res.length >= 4) {
-            onChainPct = Number(res[3] ?? 0);
-            try { totalValuePls = parseFloat(ethers.formatUnits(res[0] ?? 0n, 18)); } catch {}
-            try { requiredPls = parseFloat(ethers.formatUnits(res[1] ?? 0n, 18)); } catch {}
+            const meets = Boolean(res[2]); // meetsROI
+            if (!meets) {
+              // Derive helpful diff if possible
+              let missing = 0;
+              try {
+                const totalValuePls = parseFloat(ethers.formatUnits(res[0] ?? 0n, 18));
+                const requiredPls = parseFloat(ethers.formatUnits(res[1] ?? 0n, 18));
+                if (Number.isFinite(requiredPls) && Number.isFinite(totalValuePls)) {
+                  missing = Math.max(0, Math.floor(requiredPls - totalValuePls));
+                }
+              } catch {}
+              notifyError(`ROI not met (portfolio below mint cost). Need ~${missing} more PLS value`);
+              setisClaiming(false);
+              return;
+            }
           }
-        }
-
-        const chainOk = (onChainPct !== null) ? (onChainPct >= 100) : false;
-        const clientOk = Number.isFinite(clientPct) ? (clientPct >= 100) : false;
-        if (!chainOk && !clientOk) {
-          const missing = (Number.isFinite(requiredPls) && Number.isFinite(totalValuePls))
-            ? Math.max(0, Math.floor(requiredPls - totalValuePls))
-            : 0;
-          const showPct = (onChainPct !== null) ? onChainPct : clientPct;
-          notifyError(`ROI not met yet (${showPct}%). Need ~${missing} more PLS to reach 100%`);
-          setisClaiming(false);
-          return;
         }
       } catch {}
 
+      // 4) Execute claim
       const c = AllContracts.davContract;
       let tx;
       try {
@@ -979,11 +1000,8 @@ export const DavProvider = ({ children }) => {
         } else if (typeof c.claimPLS === 'function') {
           tx = await c.claimPLS();
         } else if (c.getFunction) {
-          // Try exact signature resolution for ethers v6
           try { tx = await c.getFunction('claimReward()')(); } catch {}
-          if (!tx) {
-            try { tx = await c.getFunction('claimPLS()')(); } catch {}
-          }
+          if (!tx) { try { tx = await c.getFunction('claimPLS()')(); } catch {} }
         }
       } catch (inner) {
         throw inner;
@@ -994,24 +1012,27 @@ export const DavProvider = ({ children }) => {
         return;
       }
       await tx.wait();
-      // Refresh claimable amount using safe path; ignore any decode issues
-      await fetchAndSet("claimableAmount", () => safeEarned(address));
-      notifySuccess('Claimed PLS!');
-      setisClaiming(false)
-    } catch (err) {
-      console.error("Claim error:", err);
-      let errorMessage = "An unknown error occurred while claiming reward.";
-      setisClaiming(false);
-      if (err?.error?.message) {
-        errorMessage = err.error.message;
-      } else if (err?.reason) {
-        errorMessage = err.reason;
-      } else if (err?.message) {
-        errorMessage = err.message;
+
+      // 5) Refresh UI state post-claim
+      await fetchAndSet('claimableAmount', () => safeEarned(address));
+      if (typeof davRead?.getROI === 'function') {
+        await fetchAndSet('roiPercentage', async () => {
+          const r = await davRead.getROI(address); return r[3];
+        }, false, 0);
       }
+      notifySuccess('Claimed PLS successfully');
+    } catch (err) {
+      console.error('Claim error:', err);
+      let errorMessage = 'Claim failed';
+      const lower = (err?.message || err?.reason || '').toLowerCase();
+      if (lower.includes('insufficient roi')) errorMessage = 'ROI requirement not met';
+      else if (lower.includes('no rewards')) errorMessage = 'No rewards to claim';
+      else if (err?.error?.message) errorMessage = err.error.message;
+      else if (err?.reason) errorMessage = err.reason;
+      else if (err?.message) errorMessage = err.message;
       notifyError(errorMessage);
     } finally {
-      setisClaiming(false)
+      setisClaiming(false);
     }
   };
 

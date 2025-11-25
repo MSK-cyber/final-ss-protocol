@@ -5,18 +5,18 @@ const DEFAULTS = {
   network: { chainId: 369, explorerUrl: 'https://scan.pulsechain.com' },
   contracts: {
     core: {
-      SWAP_V3: { address: '0xad63be034EB210e8870Ddb22541856f96302C344' },
-      STATE_V3: { address: '0xd290bC9cFaEdf2A90174f669BF9Aad7E71180451' },
-      DAV_V3: { address: '0xE843FE90dF63659d1957237ee8E91232Eedd36B3' },
+      SWAP_V3: { address: '0x27a7F4Adc36A8a94696BE83519AFd391A4719C7A' },
+      STATE_V3: { address: '0x834A4eE2849E25b94A4aB6bC19D3CD0542256244' },
+      DAV_V3: { address: '0xf01D3b66458Ef4a419679480ba59ADf646E4c838' },
     },
     support: { 
-      SwapLens: { address: '0xAF2190CC157b184A371016Ca0EA471D6bFdbF541' },
+      SwapLens: { address: '0x82c3491e629Da99b785FFBb86cec02a77E5732Fb' },
       AuctionMetrics: { address: '' },
-  BuyAndBurnController: { address: '0xe90444017e9349Dd62abC09FE26e6907E6350C56' }
+  BuyAndBurnController: { address: '0x1ACC1dc6E734A0fb7ca8Ab128F3D34f20092bC11' }
     },
     stages: {
-      AirdropDistributor: { address: '0x5346B394b5b36D6d9f1fE4785D56C0D4644085d3' },
-      AuctionAdmin: { address: '0x5094FA04929684b6904bb9184f813D686906533a' }
+      AirdropDistributor: { address: '0x99F563cb688834134668858837dF97d50346F906' },
+      AuctionAdmin: { address: '0xA001442C5147BBCbA73CafA86Ef90225086cF7e1' }
     },
     utilities: { LPHelper: { address: '' } },
   },

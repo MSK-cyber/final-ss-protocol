@@ -182,7 +182,7 @@ contract SWAP_V3 is Ownable, ReentrancyGuard, SwapErrors, SwapEvents {
     constructor(address _gov) Ownable(msg.sender) {
         governanceAddress = _gov;
         currentDayStart = _calcCurrentDayStart(block.timestamp);
-        auctionSchedule.scheduleSize = 50; // 50 tokens rotating daily
+        auctionSchedule.scheduleSize = 50; // 50 tokens for production
         // Each token gets 20 cycles: 50 tokens × 20 cycles = 1000 total auction days (1000-day cycle)
         auctionSchedule.auctionDaysLimit = auctionSchedule.scheduleSize * 20; // 50 × 20 = 1000 days
         renounceOwnership();
@@ -520,17 +520,32 @@ contract SWAP_V3 is Ownable, ReentrancyGuard, SwapErrors, SwapEvents {
     }
 
     /**
-     * @notice Check if user completed Step 1 (airdrop claim) for current cycle
-     * @param user User address
+     * @notice Check if user has completed Step 1 (airdrop claim) for current auction cycle
+     * @dev CRITICAL: DAV tokens are mint-only (non-transferable)
+     *      User's DAV balance can ONLY increase between claims
+     *      Must ensure consumed >= current balance to prevent exploitation
+     * @param user User address to check
      * @param token Auction token address
-     * @return true if user has consumed DAV units for current cycle
+     * @return true if user has claimed airdrops for ALL their current DAV balance
      */
     function _hasCompletedStep1(address user, address token) internal view returns (bool) {
         if (airdropDistributor == address(0)) return false;
-        // Check if user has consumed DAV for current cycle of this token
+        
+        // Get current auction cycle
         uint256 currentCycle = getCurrentAuctionCycle(token);
+        
+        // Get consumed DAV units from airdrop claims
         uint256 consumed = IAirdropDistributor(airdropDistributor).getConsumedDavUnitsByCycle(token, user, currentCycle);
-        return consumed > 0;
+        
+        // Get current ACTIVE DAV balance (respects expiration)
+        uint256 activeDavBalance = getDavBalance(user);
+        uint256 davUnits = activeDavBalance / 1e18;
+        
+        // CRITICAL FIX: Enforce consumed >= davUnits
+        // This prevents users from minting new DAV without claiming
+        // Since DAV is mint-only, balance never decreases (until expiration)
+        // consumed >= davUnits ensures ALL minted DAV has corresponding airdrop claims
+        return consumed >= davUnits;
     }
 
     /**
@@ -810,6 +825,30 @@ contract SWAP_V3 is Ownable, ReentrancyGuard, SwapErrors, SwapEvents {
         totalEligible = totalRegisteredUsers;
         maxAllowed = maxAuctionParticipants;
         remaining = maxAllowed > totalEligible ? maxAllowed - totalEligible : 0;
+    }
+
+    /**
+     * @notice Get auction schedule information as tuple for external contracts
+     * @return scheduleSet Whether auction schedule has been initialized
+     * @return scheduleStart Unix timestamp when first auction started
+     * @return registeredTokenCount Number of tokens currently registered in schedule
+     * @return scheduleSize Number of tokens in rotation (50)
+     * @return auctionDaysLimit Total days in schedule (1000)
+     */
+    function getAuctionScheduleInfo() external view returns (
+        bool scheduleSet,
+        uint256 scheduleStart,
+        uint256 registeredTokenCount,
+        uint256 scheduleSize,
+        uint256 auctionDaysLimit
+    ) {
+        return (
+            auctionSchedule.scheduleSet,
+            auctionSchedule.scheduleStart,
+            auctionSchedule.tokenCount,
+            auctionSchedule.scheduleSize,
+            auctionSchedule.auctionDaysLimit
+        );
     }
     
     /**

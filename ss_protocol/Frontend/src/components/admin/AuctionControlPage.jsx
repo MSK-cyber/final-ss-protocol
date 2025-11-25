@@ -17,6 +17,7 @@ export default function AuctionControlPage() {
       let daysLimit = 0;
       let scheduledCount = 0;
 
+      // Primary source: SwapLens schedule config (explicit flag only)
       if (SwapLens && contractAddr) {
         try {
           const res = await SwapLens.getScheduleConfig(contractAddr);
@@ -25,31 +26,26 @@ export default function AuctionControlPage() {
             start = Number(startRaw);
             daysLimit = Number(daysLimitRaw);
             scheduledCount = Number(countRaw);
-            scheduled = Boolean(isSet);
+            scheduled = Boolean(isSet); // Only trust explicit contract flag
           }
         } catch (e) {
-          console.warn('SwapLens getScheduleConfig failed, falling back', e);
+          console.warn('SwapLens getScheduleConfig failed', e);
         }
       }
 
-      // Fallback heuristics if schedule flag not directly obtained but data implies initialization
-      if (!scheduled) {
+      // Secondary check: active flag from getTodayToken (indicates auction actually running)
+      if (!scheduled && AuctionContract.getTodayToken) {
         try {
-          // tokenCount indicates pools registered; scheduleSize stored internally
-          const cnt = Number(await AuctionContract.tokenCount?.().catch(() => 0));
-          if (cnt > 0) scheduledCount = cnt;
-          // Attempt reading today token; non-zero token address implies schedule configured
-          if (AuctionContract.getTodayToken) {
-            const today = await AuctionContract.getTodayToken().catch(() => [ethers.ZeroAddress, false]);
-            const tokenAddr = Array.isArray(today) ? today[0] : ethers.ZeroAddress;
-            if (tokenAddr && tokenAddr !== ethers.ZeroAddress) scheduled = true;
+          const today = await AuctionContract.getTodayToken();
+          // Expect [tokenAddr, active]; active true means schedule started
+          if (Array.isArray(today) && today.length >= 2) {
+            const active = Boolean(today[1]);
+            if (active) scheduled = true;
           }
-          // If we have start time & days limit loaded earlier and counts, infer scheduled
-          if (!scheduled && start > 0 && daysLimit > 0 && scheduledCount > 0) scheduled = true;
-          // Minimal heuristic: if count > 0 and start==0 (already started, struct consumed) mark scheduled
-          if (!scheduled && scheduledCount > 0) scheduled = true;
         } catch {}
       }
+
+      // Remove all heuristic inference (tokenCount, non-zero token address, etc.) to prevent false positives
 
       setStatus({ scheduled, start, daysLimit, count: scheduledCount });
     } catch (e) {
@@ -73,7 +69,7 @@ export default function AuctionControlPage() {
     }
     setLoading(true);
     try {
-  // Contract calculates next GMT+2 8:00 AM internally; no params needed
+  // Contract calculates next GMT+5 9:00 PM internally; no params needed
       const tx = await AuctionContract.startAuctionWithAutoTokens();
       toast.success(`Start auction tx sent: ${tx.hash}`, { duration: 12000 });
       await tx.wait();
@@ -111,7 +107,7 @@ export default function AuctionControlPage() {
                         <i className="bi bi-clock-history me-2"></i>
                         <strong>Auto-Scheduled Start Time:</strong> 8:00 AM GMT+2
                       </div>
-                      <small className="d-block mt-1">The auction will automatically start at 8:00 AM GMT+2 (Nov 22, 2025 - 06:00 UTC)</small>
+                      <small className="d-block mt-1">The auction will automatically start at 8:00 AM GMT+2 (Nov 26, 2025 - 06:00 UTC)</small>
                     </div>
                   </div>
                   <div className="col-md-3">

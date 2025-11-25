@@ -60,4 +60,5 @@ interface SwapErrors {
     error UnauthorizedRegistration();
     error AuctionCyclesCompleted();
     error TokenDeploymentLimitReached();
+    error MustClaimAllDavAirdrops();
 }

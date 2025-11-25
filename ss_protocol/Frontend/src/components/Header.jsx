@@ -38,7 +38,7 @@ const Header = () => {
               STATE DEX
             </label>
             <p className="detailAmount mb-0" style={{ fontSize: "0.8rem" }}>
-              Not just a swap — it’s VOLUME
+              Profit from both sides of the liquidity pool
             </p>
           </NavLink>
           <div className="d-flex align-items-center">

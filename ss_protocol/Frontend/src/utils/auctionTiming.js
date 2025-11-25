@@ -212,8 +212,8 @@ export async function getAuctionTiming(auctionContract, tokenAddress = null) {
       if (fn) {
         const info = await fn();
         // Supports both array and named-struct return
-        const auctionDuration = Number(info?.auctionDuration ?? info?.[2] ?? 7200);
-        const interval = Number(info?.interval ?? info?.[3] ?? 3600);
+        const auctionDuration = Number(info?.auctionDuration ?? info?.[2] ?? 1800);
+        const interval = Number(info?.interval ?? info?.[3] ?? 0);
         // Cache for 1h
         cachedAuctionDuration = auctionDuration;
         cachedAuctionInterval = interval;
@@ -327,23 +327,23 @@ export function invalidateTimingCache() {
 }
 
 // ===== Manual schedule support =====
-// Anchor: 2025-11-22 08:00 GMT+2 = 2025-11-22 06:00:00 UTC
+// Anchor: 2025-11-26 08:00 GMT+2 = 2025-11-26 06:00:00 UTC
 let MANUAL_ANCHOR_UTC = 0;
 try {
-  const ts = Date.parse('2025-11-22T06:00:00Z');
+  const ts = Date.parse('2025-11-26T06:00:00Z');
   if (!Number.isNaN(ts)) MANUAL_ANCHOR_UTC = Math.floor(ts / 1000);
 } catch {}
 if (!MANUAL_ANCHOR_UTC) {
-  // Fallback hardcoded epoch if Date parsing unavailable (Nov 22, 2025 06:00:00 UTC)
-  // This is 1732254000 if computed; keep zero if unknown to force recompute by caller
-  MANUAL_ANCHOR_UTC = 1732254000;
+  // Fallback hardcoded epoch if Date parsing unavailable (Nov 26, 2025 06:00:00 UTC)
+  // Keep zero if unknown to force recompute by caller
+  MANUAL_ANCHOR_UTC = 1732604400;
 }
 
 /**
- * Compute manual auction phase from a fixed anchor (08:00 GMT+2 on Nov 22, 2025 = 06:00 UTC).
+ * Compute manual auction phase from a fixed anchor (08:00 GMT+2 on Nov 26, 2025 = 06:00 UTC).
  * - duration: 30min (1800)
  * - interval: 0 (continuous auctions)
- * - slot = 15min (duration + interval)
+ * - slot = 30min (duration + interval)
  * Returns { phase: 'active'|'interval', secondsLeft, phaseEndAt }
  */
 export function computeManualPhase(nowSec, options = {}) {

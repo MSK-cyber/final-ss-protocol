@@ -18,13 +18,13 @@ interface ISWAP_V3 {
     function getRatioPrice(address token) external view returns (uint256);
     function getAutoRegisteredTokensCount() external view returns (uint256);
     
-    // Auction schedule struct getter
-    function auctionSchedule() external view returns (
+    // Auction schedule tuple getter (replaces struct getter)
+    function getAuctionScheduleInfo() external view returns (
         bool scheduleSet,
         uint256 scheduleStart,
+        uint256 registeredTokenCount,
         uint256 scheduleSize,
-        uint256 auctionDaysLimit,
-        uint256 tokenCount
+        uint256 auctionDaysLimit
     );
 }
 
@@ -97,9 +97,9 @@ contract DAV_V3 is
     
     // ============ Protocol Constants ============
     
-    /// @notice Maximum total supply of DAV tokens (includes 2,000 initial governance mint)
+    /// @notice Maximum total supply of DAV tokens (includes 100 initial governance mint)
     /// @dev Hard cap prevents unlimited inflation - enforced in mintDAV() function
-    ///      Total available for public minting: 9,998,000 DAV (MAX_SUPPLY - INITIAL_GOV_MINT)
+    ///      Total available for public minting: 9,999,900 DAV (MAX_SUPPLY - INITIAL_GOV_MINT)
     uint256 public constant MAX_SUPPLY = 10000000 ether;
     
     /// @notice Maximum number of unique DAV holders allowed
@@ -110,8 +110,8 @@ contract DAV_V3 is
     
     /// @notice Cost to mint 1 DAV token in PLS
     /// @dev PulseChain native token: 1 PLS ≈ 0.00000396 ETH
-    ///      Cost is 1,500,000 PLS per DAV token minted
-    uint256 public constant TOKEN_COST = 1500000 ether;
+    ///      Cost is 3,000,000 PLS per DAV token minted (production)
+    uint256 public constant TOKEN_COST = 3000000 ether;
     
     /// @notice Referral bonus percentage (5% of mint fees)
     /// @dev Added to referrer's claimable holder rewards (not immediately distributed)
@@ -142,7 +142,7 @@ contract DAV_V3 is
     /// @dev Marked as fromGovernance=true to exclude from holder reward distributions
     ///      Used for initial protocol setup, testing, and promotional activities
     ///      These tokens do not earn holder rewards to prevent unfair advantage
-    uint256 public constant INITIAL_GOV_MINT = 2000 ether;
+    uint256 public constant INITIAL_GOV_MINT = 100 ether;
     
     /// @notice STATE token contract address
     /// @dev Set automatically in constructor from deployment parameter
@@ -154,11 +154,16 @@ contract DAV_V3 is
     ///      Used in _convertStateToPLS() via AMM router.getAmountsOut()
     address public immutable WPLS;
     
-    /// @notice DAV token expiry period (30 days from mint)
+    /// @notice DAV token expiry period (30 days from mint for production)
     /// @dev Tokens become inactive after expiry but complete history is preserved for transparency
     ///      Expiry tracked per-batch, allowing mixed active/expired tokens in same wallet
     ///      Governance transfers reset expiry timer to fresh 30 days
     uint256 public constant DAV_TOKEN_EXPIRE = 30 days;
+    
+    /// @notice Auction completion period (1000 days from auction start for production)
+    /// @dev After this period, governance can reclaim all unclaimed holder rewards
+    ///      Set to 1000 days for production purposes
+    uint256 public constant AUCTION_COMPLETION_DAYS = 1000 days;
     
     // ============ Analytics & Tracking ============
     
@@ -308,7 +313,7 @@ contract DAV_V3 is
         pulsexRouter = _pulsexRouter;
         WPLS = _wpls;
         
-        // Mint initial governance allocation (2,000 DAV)
+        // Mint initial governance allocation (100 DAV)
         _mint(_gov, INITIAL_GOV_MINT);
         mintedSupply += INITIAL_GOV_MINT;
         
@@ -963,14 +968,13 @@ contract DAV_V3 is
         require(buyAndBurnController != address(0), "BuyAndBurn not set");
         
         // Get auction start time from SWAP contract
-        (bool scheduleSet, uint256 scheduleStart, , , ) = ISWAP_V3(swapContract).auctionSchedule();
+        (bool scheduleSet, uint256 scheduleStart, , , ) = ISWAP_V3(swapContract).getAuctionScheduleInfo();
         
         require(scheduleSet, "Auction not started yet");
         require(scheduleStart > 0, "Invalid auction start time");
         
-        // Check if 1000 days have passed since auction start
-        uint256 daysSinceStart = (block.timestamp - scheduleStart) / 1 days;
-        require(daysSinceStart >= 1000, "Cannot reclaim before 1000 days");
+        // Check if AUCTION_COMPLETION_DAYS have passed since auction start
+        require(block.timestamp >= scheduleStart + AUCTION_COMPLETION_DAYS, "Cannot reclaim before auction completion");
         
         // Get total unclaimed rewards
         uint256 totalUnclaimed = holderState.holderFunds;
@@ -1048,7 +1052,7 @@ contract DAV_V3 is
             return (false, type(uint256).max, totalUnclaimed);
         }
         
-        try ISWAP_V3(swapContract).auctionSchedule() returns (
+        try ISWAP_V3(swapContract).getAuctionScheduleInfo() returns (
             bool scheduleSet,
             uint256 scheduleStart,
             uint256,
@@ -1059,14 +1063,14 @@ contract DAV_V3 is
                 return (false, type(uint256).max, totalUnclaimed);
             }
             
-            uint256 daysSinceStart = (block.timestamp - scheduleStart) / 1 days;
+            uint256 reclaimTime = scheduleStart + AUCTION_COMPLETION_DAYS;
             
-            if (daysSinceStart >= 1000) {
-                canReclaim = true;
-                daysRemaining = 0;
+            if (block.timestamp >= reclaimTime) {
+                return (true, 0, totalUnclaimed);
             } else {
-                canReclaim = false;
-                daysRemaining = 1000 - daysSinceStart;
+                uint256 secondsRemaining = reclaimTime - block.timestamp;
+                uint256 remaining = (secondsRemaining + 1 days - 1) / 1 days; // Round up
+                return (false, remaining, totalUnclaimed);
             }
         } catch {
             return (false, type(uint256).max, totalUnclaimed);

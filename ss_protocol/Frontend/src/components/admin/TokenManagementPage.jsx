@@ -66,6 +66,36 @@ export default function TokenManagementPage() {
     try {
       const count = Number(await AuctionContract.tokenCount?.().catch(() => 0));
       const list = [];
+      
+      // Fetch all burned LP amounts once
+      const burnedLPMap = {};
+      try {
+        for (let i = 0; i < count; i++) {
+          const tokenAddr = await AuctionContract.autoRegisteredTokens(i).catch(() => null);
+          if (tokenAddr && tokenAddr !== ethers.ZeroAddress) {
+            try {
+              const pair = await AuctionContract.getPairAddress(tokenAddr).catch(() => ethers.ZeroAddress);
+              if (pair && pair !== ethers.ZeroAddress) {
+                // Get LP token balance at burn address (0xdead or similar)
+                const ERC20_ABI = ["function balanceOf(address) view returns (uint256)", "function decimals() view returns (uint8)"];
+                const runner = AuctionContract?.runner || undefined;
+                const lpContract = new ethers.Contract(pair, ERC20_ABI, runner);
+                const burnAddress = "0x000000000000000000000000000000000000dEaD";
+                
+                let balanceRaw = 0n;
+                let decimals = 18;
+                try { balanceRaw = await lpContract.balanceOf(burnAddress); } catch {}
+                try { decimals = await lpContract.decimals(); } catch {}
+                
+                const formatted = Number(ethers.formatUnits(balanceRaw, decimals));
+                const numericBalance = Math.floor(Number.isFinite(formatted) ? formatted : 0);
+                burnedLPMap[tokenAddr.toLowerCase()] = numericBalance;
+              }
+            } catch {}
+          }
+        }
+      } catch {}
+      
       for (let i = 0; i < count; i++) {
         try {
           const token = await AuctionContract.autoRegisteredTokens(i);
@@ -82,7 +112,11 @@ export default function TokenManagementPage() {
             try { name = await erc.name(); } catch {}
             try { symbol = await erc.symbol(); } catch {}
           } catch {}
-          list.push({ token, pair, name, symbol });
+          
+          // Get burned LP from map
+          const burnedLp = burnedLPMap[token.toLowerCase()] || 0;
+          
+          list.push({ token, pair, name, symbol, burnedLp });
         } catch {}
       }
       setTokens(list);
@@ -1176,6 +1210,7 @@ export default function TokenManagementPage() {
                     <th className="text-uppercase small">Pool Address</th>
                     <th className="text-uppercase small">Pool Status</th>
                     <th className="text-uppercase small text-center">Add Liquidity</th>
+                    <th className="text-uppercase small text-center">Burned LP</th>
                     <th className="text-uppercase small text-center">Actions</th>
                   </tr>
                 </thead>
@@ -1235,6 +1270,16 @@ export default function TokenManagementPage() {
                             Add Liquidity
                           </button>
                         )}
+                      </td>
+                      {/* Burned LP column */}
+                      <td className="text-center">
+                        <div className="mx-4">
+                          {t.burnedLp > 0 ? (
+                            <span className="fw-semibold">{t.burnedLp.toLocaleString()}</span>
+                          ) : (
+                            <span className="badge bg-success">NEW</span>
+                          )}
+                        </div>
                       </td>
                       <td>
                         <div className="d-flex gap-2 justify-content-center">

@@ -52,8 +52,13 @@ const InfoPage = () => {
 
     if (status === "no-wallet") {
       return (
-        <div className="alert alert-info text-center my-4" role="alert">
-          Connect your wallet to verify DAV eligibility for DAV Vault.
+        <div className="card bg-dark text-light border-0 shadow-sm my-4">
+          <div className="card-body text-center py-5">
+            <h5 className="card-title mb-3">Connect your wallet to verify DAV eligibility</h5>
+            <p className="card-text mb-4">
+              Please connect your wallet to verify DAV eligibility for DAV Vault.
+            </p>
+          </div>
         </div>
       );
     }

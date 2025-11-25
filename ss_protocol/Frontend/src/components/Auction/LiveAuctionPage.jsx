@@ -1,6 +1,7 @@
 import { useMemo, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import AuctionBoxes from "./AuctionBoxes";
+import ComingSoonBox from "./ComingSoonBox";
 import { useDAvContract } from "../../Functions/DavTokenFunctions";
 import { useAccount } from "wagmi";
 import { isBypassedAddress } from "../../utils/whitelist";
@@ -51,8 +52,13 @@ const LiveAuctionPage = () => {
 
     if (status === "no-wallet") {
       return (
-        <div className="alert alert-info text-center my-4" role="alert">
-          Connect your wallet to verify DAV eligibility for auctions.
+        <div className="card bg-dark text-light border-0 shadow-sm my-4">
+          <div className="card-body text-center py-5">
+            <h5 className="card-title mb-3">Connect your wallet to verify DAV eligibility</h5>
+            <p className="card-text mb-4">
+              Please connect your wallet to verify DAV eligibility for auctions.
+            </p>
+          </div>
         </div>
       );
     }
@@ -99,6 +105,12 @@ const LiveAuctionPage = () => {
         <div className="row g-4 d-flex align-items-stretch pb-1">
           <div className="col-md-4 p-0 m-2 cards">
             <AuctionBoxes />
+          </div>
+          <div className="col-md-4 p-0 m-2 cards coming-soon-offset second-box-adjust">
+            <ComingSoonBox title="pDAV2" note="Coming Soon..." />
+          </div>
+          <div className="col-md-4 p-0 m-2 cards coming-soon-offset">
+            <ComingSoonBox title="pDAV3" note="Coming Soon..." />
           </div>
         </div>
       )}

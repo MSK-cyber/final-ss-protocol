@@ -56,22 +56,22 @@ const Footer = () => {
   // REMOVED: Local ticking interval - countdown happens in SwapContractFunctions
   // The AuctionTime from context is already updating every second
 
-  // Helper to format a UNIX seconds timestamp into PKT timezone
-  const formatPKT = (tsSec) => {
+  // Helper to format a UNIX seconds timestamp into GMT+2 timezone
+  const formatGMT2 = (tsSec) => {
     try {
       const dt = new Date(Number(tsSec || 0) * 1000);
       if (!Number.isFinite(dt.getTime())) return "Invalid Date";
       return new Intl.DateTimeFormat('en-GB', {
-        timeZone: 'Asia/Karachi',
+        timeZone: 'Africa/Cairo',
         year: 'numeric',
         month: 'short',
         day: '2-digit',
         hour: '2-digit',
         minute: '2-digit',
         hour12: true,
-      }).format(dt) + ' PKT';
+      }).format(dt) + ' GMT+2';
     } catch {
-      try { const d = new Date(Number(tsSec || 0) * 1000); return d.toLocaleString('en-GB') + ' PKT'; } catch { return 'Invalid Date'; }
+      try { const d = new Date(Number(tsSec || 0) * 1000); return d.toLocaleString('en-GB') + ' GMT+2'; } catch { return 'Invalid Date'; }
     }
   };
 
