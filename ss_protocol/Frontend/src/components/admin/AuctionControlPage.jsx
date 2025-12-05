@@ -105,9 +105,9 @@ export default function AuctionControlPage() {
                     <div className="alert alert-info mb-0">
                       <div>
                         <i className="bi bi-clock-history me-2"></i>
-                        <strong>Auto-Scheduled Start Time:</strong> 8:00 AM GMT+2
+                        <strong>Auto-Scheduled Start Time:</strong> 5:00 PM GMT+3
                       </div>
-                      <small className="d-block mt-1">The auction will automatically start at 8:00 AM GMT+2 (Nov 26, 2025 - 06:00 UTC)</small>
+                      <small className="d-block mt-1">The auction will automatically start at 5:00 PM GMT+3 (Dec 8, 2025 - 14:00 UTC)</small>
                     </div>
                   </div>
                   <div className="col-md-3">

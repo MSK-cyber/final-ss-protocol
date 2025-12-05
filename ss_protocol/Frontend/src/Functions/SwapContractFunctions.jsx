@@ -548,7 +548,7 @@ export const SwapContractProvider = ({ children }) => {
             const effectiveNow = chainNowSec > 0 ? chainNowSec : localNowSec;
             if (chainNowSec > 0) setChainTimeSkew(chainNowSec - localNowSec);
 
-            const manual = computeManualPhase(effectiveNow, { duration: 1800, interval: 0 });
+            const manual = computeManualPhase(effectiveNow, { duration: 86400, interval: 0 });
             setAuctionPhase(manual.phase);
             setAuctionPhaseSeconds(manual.secondsLeft);
             setAuctionPhaseEndAt(manual.phaseEndAt);
@@ -769,7 +769,7 @@ export const SwapContractProvider = ({ children }) => {
         // In manual mode, continuously update phase and phase end at second-level from local clock + chain skew
         if (USE_MANUAL_TIMER) {
           const nowSecManual = Math.floor(Date.now() / 1000) + (chainSkewRef.current || 0);
-          const manual = computeManualPhase(nowSecManual, { duration: 1800, interval: 0 });
+          const manual = computeManualPhase(nowSecManual, { duration: 86400, interval: 0 });
           const prevPhase = prevPhaseRef.current;
           setAuctionPhase((old) => (old !== manual.phase ? manual.phase : old));
           setAuctionPhaseEndAt((old) => (old !== manual.phaseEndAt ? manual.phaseEndAt : old));

@@ -24,7 +24,7 @@ export async function detectAuctionDuration(auctionContract, tokenAddress) {
     if (!auctionContract || typeof auctionContract.getAuctionTimeLeft !== 'function' || typeof auctionContract.isAuctionActive !== 'function') {
   console.warn('auctionTiming.detectAuctionDuration: auctionContract not ready');
   // Prefer sane defaults that match on-chain library if unknown
-  return cachedAuctionDuration || 1800; // 30 minutes
+  return cachedAuctionDuration || 86400; // 24 hours
     }
     // Check if we have a fresh cached value
     if (cachedAuctionDuration && Date.now() - lastDetectionTime < CACHE_DURATION) {
@@ -41,7 +41,7 @@ export async function detectAuctionDuration(auctionContract, tokenAddress) {
     }
 
     if (!tokenAddress || !ethers.isAddress(tokenAddress)) {
-  return cachedAuctionDuration || 1800;
+  return cachedAuctionDuration || 86400;
     }
 
     let timeLeftSeconds = 0;
@@ -50,7 +50,7 @@ export async function detectAuctionDuration(auctionContract, tokenAddress) {
       timeLeftSeconds = Number(timeLeft);
     } catch (e) {
       console.warn('detectAuctionDuration: getAuctionTimeLeft failed; using defaults', e?.message || e);
-      return cachedAuctionDuration || 1800;
+      return cachedAuctionDuration || 86400;
     }
     
     // Check if auction is active (guard decode errors)
@@ -103,8 +103,8 @@ export async function detectAuctionDuration(auctionContract, tokenAddress) {
     
     // Fallback: estimate based on current time left (assume we're mid-auction)
     if (!cachedAuctionDuration && timeLeftSeconds > 0) {
-      // Common durations: 5min, 15min, 30min, 1hr
-      const commonDurations = [300, 900, 1800, 3600];
+      // Common durations: 5min, 15min, 30min, 1hr, 24hr
+      const commonDurations = [3600, 7200, 21600, 43200, 86400];
       const closest = commonDurations.reduce((prev, curr) => 
         Math.abs(curr - timeLeftSeconds) < Math.abs(prev - timeLeftSeconds) ? curr : prev
       );
@@ -112,10 +112,10 @@ export async function detectAuctionDuration(auctionContract, tokenAddress) {
       console.log(`⚠️ Estimated auction duration: ${closest} seconds based on time left`);
     }
     
-    return cachedAuctionDuration || 1800; // Default to 30 minutes if unable to detect
+    return cachedAuctionDuration || 86400; // Default to 24 hours if unable to detect
   } catch (error) {
     console.warn('Error detecting auction duration:', error?.message || error);
-    return cachedAuctionDuration || 1800; // Return cached or default
+    return cachedAuctionDuration || 86400; // Return cached or default
   }
 }
 
@@ -198,9 +198,9 @@ export async function getAuctionTiming(auctionContract, tokenAddress = null) {
   try {
     if (!auctionContract) {
       return {
-        duration: 1800,
+        duration: 86400,
         interval: 0,
-        durationFormatted: '30 minutes',
+        durationFormatted: '24 hours',
         intervalFormatted: '0 seconds',
       };
     }
@@ -212,7 +212,7 @@ export async function getAuctionTiming(auctionContract, tokenAddress = null) {
       if (fn) {
         const info = await fn();
         // Supports both array and named-struct return
-        const auctionDuration = Number(info?.auctionDuration ?? info?.[2] ?? 1800);
+        const auctionDuration = Number(info?.auctionDuration ?? info?.[2] ?? 86400);
         const interval = Number(info?.interval ?? info?.[3] ?? 0);
         // Cache for 1h
         cachedAuctionDuration = auctionDuration;
@@ -264,9 +264,9 @@ export async function getAuctionTiming(auctionContract, tokenAddress = null) {
   } catch (error) {
     console.warn('Error getting auction timing:', error?.message || error);
     return {
-      duration: 1800,
+      duration: 86400,
       interval: 0,
-      durationFormatted: '30 minutes',
+      durationFormatted: '24 hours',
       intervalFormatted: '0 seconds',
     };
   }
@@ -327,27 +327,27 @@ export function invalidateTimingCache() {
 }
 
 // ===== Manual schedule support =====
-// Anchor: 2025-11-26 08:00 GMT+2 = 2025-11-26 06:00:00 UTC
+// Anchor: 2025-12-08 17:00 GMT+3 = 2025-12-08 14:00:00 UTC
 let MANUAL_ANCHOR_UTC = 0;
 try {
-  const ts = Date.parse('2025-11-26T06:00:00Z');
+  const ts = Date.parse('2025-12-08T14:00:00Z');
   if (!Number.isNaN(ts)) MANUAL_ANCHOR_UTC = Math.floor(ts / 1000);
 } catch {}
 if (!MANUAL_ANCHOR_UTC) {
-  // Fallback hardcoded epoch if Date parsing unavailable (Nov 26, 2025 06:00:00 UTC)
+  // Fallback hardcoded epoch if Date parsing unavailable (Dec 8, 2025 14:00:00 UTC)
   // Keep zero if unknown to force recompute by caller
-  MANUAL_ANCHOR_UTC = 1732604400;
+  MANUAL_ANCHOR_UTC = 1765202400;
 }
 
 /**
- * Compute manual auction phase from a fixed anchor (08:00 GMT+2 on Nov 26, 2025 = 06:00 UTC).
- * - duration: 30min (1800)
+ * Compute manual auction phase from a fixed anchor (17:00 GMT+3 on Dec 8, 2025 = 14:00 UTC).
+ * - duration: 24 hours (86400)
  * - interval: 0 (continuous auctions)
- * - slot = 30min (duration + interval)
+ * - slot = 24 hours (duration + interval)
  * Returns { phase: 'active'|'interval', secondsLeft, phaseEndAt }
  */
 export function computeManualPhase(nowSec, options = {}) {
-  const duration = Number(options.duration ?? 1800);
+  const duration = Number(options.duration ?? 86400);
   const interval = Number(options.interval ?? 0);
   const slot = duration + interval;
   const anchor = Number(options.anchorUtc ?? MANUAL_ANCHOR_UTC);

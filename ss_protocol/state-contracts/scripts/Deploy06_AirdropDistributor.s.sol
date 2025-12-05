@@ -9,9 +9,9 @@ import {DAV_V3} from "../src/DavToken.sol";
 
 contract Deploy06_AirdropDistributor is Script {
     // Update these addresses after previous deployments
-    address constant SWAP_V3_ADDRESS = 0x27a7F4Adc36A8a94696BE83519AFd391A4719C7A; // SWAP_V3 from Deploy01
-    address constant DAV_V3_ADDRESS = 0xf01D3b66458Ef4a419679480ba59ADf646E4c838; // DAV_V3 from Deploy05
-    address constant STATE_V3_ADDRESS = 0x834A4eE2849E25b94A4aB6bC19D3CD0542256244; // STATE_V3 from Deploy02
+    address constant SWAP_V3_ADDRESS = 0x8172716bD7117461D4b20bD0434358F74244d4ec; // SWAP_V3 from Deploy01
+    address constant DAV_V3_ADDRESS = 0xCC6EE62e3CBE05d622af0F08Bac76067e914C433; // DAV_V3 from Deploy05
+    address constant STATE_V3_ADDRESS = 0x4e90670b4cDE8FF7cdDEeAf99AEFD68a114d9C01; // STATE_V3 from Deploy02
 
     function run() external {
         require(SWAP_V3_ADDRESS != address(0), "Must update SWAP_V3_ADDRESS first");

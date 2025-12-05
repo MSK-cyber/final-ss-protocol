@@ -3,19 +3,19 @@
   "networkName": "PulseChain Mainnet",
   "rpc": "https://rpc.pulsechain.com",
   "blockExplorer": "https://scan.pulsechain.com",
-  "deploymentBlocks": "TBD",
-  "deploymentTimestamp": 1732492800,
-  "deployer": "0xF4579FA5Aca398FfeeB3eD1298104d226Ef84ebd",
-  "governance": "0xBAaB2913ec979d9d21785063a0e4141e5B787D28",
+  "deploymentBlocks": "25190779-25190855",
+  "deploymentTimestamp": 1733400000,
+  "deployer": "0x99Ab030143101F6E3D061593B6AeFB4F14301446",
+  "governance": "0x0f7F24c7F22e2Ca7052f051A295e1a5D3369cAcE",
   "development": "0x5E19e86F1D10c59Ed9290cb986e587D2541e942C",
   "totalGasUsed": 16000000,
-  "totalCostPLS": 79,
+  "totalCostPLS": 1850,
   "configuration": {
     "auctionCycle": "Auto-detected from blockchain",
     "walletLimit": 5000,
     "airdropPerDav": 10000,
     "davTokenSupply": "10 Million",
-    "auctionDuration": "30 minutes",
+    "auctionDuration": "24 hours",
     "auctionInterval": "Auto-detected from blockchain",
     "davExpiration": "2 days",
     "davCost": "10000 PLS",
@@ -24,22 +24,22 @@
     "listedTokenSupply": "5 Billion",
     "stateGovernanceShare": "5%",
     "tokenGovernanceShare": "1%",
-    "auctionStartTime": "26 Nov 2025, 8:00 AM GMT+2"
+    "auctionStartTime": "8 Dec 2025, 5:00 PM GMT+3"
   },
   "contracts": {
     "core": {
-      "SWAP_V3": "0x27a7F4Adc36A8a94696BE83519AFd391A4719C7A",
-      "STATE_V3": "0x834A4eE2849E25b94A4aB6bC19D3CD0542256244",
-      "DAV_V3": "0xf01D3b66458Ef4a419679480ba59ADf646E4c838"
+      "SWAP_V3": "0x8172716bD7117461D4b20bD0434358F74244d4ec",
+      "STATE_V3": "0x4e90670b4cDE8FF7cdDEeAf99AEFD68a114d9C01",
+      "DAV_V3": "0xCC6EE62e3CBE05d622af0F08Bac76067e914C433"
     },
     "support": {
-      "SwapLens": "0x82c3491e629Da99b785FFBb86cec02a77E5732Fb",
+      "SwapLens": "0x9683fC01A08Db24133B60cE51B4BEB616508a97E",
       "AuctionMetrics": "",
-  "BuyAndBurnController": "0x1ACC1dc6E734A0fb7ca8Ab128F3D34f20092bC11"
+      "BuyAndBurnController": "0xf1Df5CD347A498768A44F7e0549F833525e3b751"
     },
     "stages": {
-      "AirdropDistributor": "0x99F563cb688834134668858837dF97d50346F906",
-      "AuctionAdmin": "0xA001442C5147BBCbA73CafA86Ef90225086cF7e1"
+      "AirdropDistributor": "0x40FD2DA5B8ECA575Ca10C06F9DC5aFD205D32630",
+      "AuctionAdmin": "0xEab50ADaB223f96f139B75430dF7274aE66560Db"
     },
     "utilities": {
       "LPHelper": ""
@@ -52,18 +52,18 @@
   },
   "tokens": {
     "STATE_V3": {
-      "address": "0x834A4eE2849E25b94A4aB6bC19D3CD0542256244",
+      "address": "0x4e90670b4cDE8FF7cdDEeAf99AEFD68a114d9C01",
       "symbol": "pSTATE1",
       "name": "PulseSTATE1",
       "decimals": 18,
       "totalSupply": "100000000000000000000000000000000"
     },
     "DAV_V3": {
-      "address": "0xf01D3b66458Ef4a419679480ba59ADf646E4c838",
+      "address": "0xCC6EE62e3CBE05d622af0F08Bac76067e914C433",
       "symbol": "pDAV1",
       "name": "PulseDAV1",
       "decimals": 18,
-      "totalSupply": "2000000000000000000000"
+      "totalSupply": "10000000000000000000000000"
     }
   }
 }

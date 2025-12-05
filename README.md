@@ -1,4 +1,4 @@
-# State Protocol - Decentralized Auction System
+# State Protocol - Decentralised Autonomous Vault
 
 A comprehensive DeFi protocol on PulseChain implementing a dual-auction system (Normal & Reverse) for token distribution, powered by time-limited DAV (Decentralised Autonomous Vault) tokens.
 

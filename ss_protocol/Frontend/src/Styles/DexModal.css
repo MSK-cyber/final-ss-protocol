@@ -49,7 +49,7 @@
 .dex-token-logo {
   width: 36px;
   height: 36px;
-  border-radius: 50%;
+  border-radius: 0;
 }
 
 .dex-title-wrap {

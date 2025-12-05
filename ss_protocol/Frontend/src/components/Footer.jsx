@@ -9,6 +9,7 @@ import { formatCountdown } from "../Constants/Utils";
 // import { formatDuration } from "../utils/auctionTiming";
 import { ContractContext } from "../Functions/ContractInitialize";
 import { ethers } from "ethers";
+import ContractsModal from "./ContractsModal";
 
 const Footer = () => {
   const location = useLocation();
@@ -28,6 +29,7 @@ const Footer = () => {
   // Remove per-token fallback to avoid key mismatches or duplicated entries
   const [reverseNow, setReverseNow] = useState(null);
   const [lastKnownReverse, setLastKnownReverse] = useState(null);
+  const [showContractsModal, setShowContractsModal] = useState(false);
 
   // Fetch on-chain reverse status for today's token using centralized address from context
   useEffect(() => {
@@ -76,10 +78,10 @@ const Footer = () => {
   };
 
   const messages = [
-    "State DEX - beta version",
-    "State DEX - beta version",
-    "State DEX - beta version",
-    "State DEX - beta version",
+    "State DEX - Beta Version",
+    "State DEX - Beta Version",
+    "State DEX - Beta Version",
+    "State DEX - Beta Version",
   ];
   const [currentMessageIndex, setCurrentMessageIndex] = useState(0);
   useEffect(() => {
@@ -143,7 +145,7 @@ const Footer = () => {
             {messages[currentMessageIndex]}
           </div>
 
-          {/* Right: Docs/Disclaimer + X icon */}
+          {/* Right: Docs/Disclaimer + Contracts + X icon */}
           <div className="d-flex align-items-center gap-3 gap-md-4">
             <a
               href="https://system-state-documentation.gitbook.io/system-state"
@@ -172,9 +174,23 @@ const Footer = () => {
             >
               <FaXTwitter style={{ height: "20px", width: "20px" }} />
             </a>
+            <button
+              onClick={() => setShowContractsModal(true)}
+              className="text-white bg-transparent border-0 p-0 fs-4"
+              style={{ cursor: "pointer" }}
+              title="View Smart Contracts"
+            >
+              <i className="bi bi-file-earmark-code" style={{ height: "20px", width: "20px" }}></i>
+            </button>
           </div>
         </div>
       </div>
+
+      {/* Contracts Modal */}
+      <ContractsModal 
+        isOpen={showContractsModal} 
+        onClose={() => setShowContractsModal(false)} 
+      />
     </footer>
   );
 };

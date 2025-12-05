@@ -1,10 +1,7 @@
-import React, { useEffect, useMemo } from "react";
+import React, { useEffect } from "react";
 import SwapComponent from "./SwapModel";
 import "../../Styles/DexModal.css";
-import dav from "../../assets/davlogo.png";
-import state from "../../assets/statelogo.png";
-import { isImageUrl } from "../../Constants/Constants";
-import { generateIdenticon } from "../../utils/identicon";
+import faviconLogo from "/favicon.png";
 
 const DexModal = ({ isOpen, onClose, token, preselectToken }) => {
   // Escape key closes modal
@@ -16,15 +13,6 @@ const DexModal = ({ isOpen, onClose, token, preselectToken }) => {
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [isOpen, onClose]);
 
-  const logoSrc = useMemo(() => {
-    if (!token) return null;
-    if (token.tokenName === "DAV") return dav;
-    if (token.tokenName === "STATE") return state;
-    if (isImageUrl(token.emoji)) return token.emoji;
-    if (token.TokenAddress) return generateIdenticon(token.TokenAddress);
-    return null;
-  }, [token]);
-
   if (!isOpen) return null;
 
   return (
@@ -33,9 +21,7 @@ const DexModal = ({ isOpen, onClose, token, preselectToken }) => {
       <div className="dex-modal" role="document">
         <div className="dex-header">
           <div className="dex-header-left">
-            {logoSrc && (
-              <img src={logoSrc} alt={`${token?.tokenName || "Token"} logo`} className="dex-token-logo" />
-            )}
+            <img src={faviconLogo} alt="STATE DEX logo" className="dex-token-logo" />
             <div className="dex-title-wrap">
               <h5 className="dex-title">{token?.displayName || token?.tokenName} — DEX Swap</h5>
               <div className="dex-subtitle">Powered by STATE DEX</div>

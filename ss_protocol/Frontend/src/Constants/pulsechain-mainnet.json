@@ -5,31 +5,31 @@
   "factory": "0x1715a3E4A142d8b698131108995174F37aEBA10D",
   "baseToken": "0xA1077a294dDE1B09bB078844df40758a5D0f9a27",
   "addresses": {
-    "SWAP_V3": "0x27a7F4Adc36A8a94696BE83519AFd391A4719C7A",
-    "STATE_V3": "0x834A4eE2849E25b94A4aB6bC19D3CD0542256244",
-    "DAV_V3": "0xf01D3b66458Ef4a419679480ba59ADf646E4c838",
-    "SwapLens": "0x82c3491e629Da99b785FFBb86cec02a77E5732Fb",
+    "SWAP_V3": "0x8172716bD7117461D4b20bD0434358F74244d4ec",
+    "STATE_V3": "0x4e90670b4cDE8FF7cdDEeAf99AEFD68a114d9C01",
+    "DAV_V3": "0xCC6EE62e3CBE05d622af0F08Bac76067e914C433",
+    "SwapLens": "0x9683fC01A08Db24133B60cE51B4BEB616508a97E",
     "AuctionMetrics": "",
-  "BuyAndBurnController": "0x1ACC1dc6E734A0fb7ca8Ab128F3D34f20092bC11",
-    "AirdropDistributor": "0x99F563cb688834134668858837dF97d50346F906",
-    "AuctionAdmin": "0xA001442C5147BBCbA73CafA86Ef90225086cF7e1",
+    "BuyAndBurnController": "0xf1Df5CD347A498768A44F7e0549F833525e3b751",
+    "AirdropDistributor": "0x40FD2DA5B8ECA575Ca10C06F9DC5aFD205D32630",
+    "AuctionAdmin": "0xEab50ADaB223f96f139B75430dF7274aE66560Db",
     "LPHelper": ""
   },
   "deployment": {
-    "blocks": "TBD",
+    "blocks": "25190779-25190855",
     "gasUsed": 16000000,
-    "cost": "79 PLS",
-    "date": "2025-11-25",
+    "cost": "1850 PLS",
+    "date": "2025-12-05",
     "verified": true
   },
   "transactions": {
-    "SWAP_V3": "0xde9d3b92cfb3d4c47f69aaa71c04b0ac4113ed12da32bb3b8f9c10097ad3fb1b",
-    "STATE_V3": "0x4b88331dbb04b4b5e1a914dbd92cba3dfd6b2aeb5dd3d01e9da9e4a10a9da8d6",
-    "AuctionAdmin": "0x6c8fc6b0d3ec65e7a04a7f8f02adf0e10d29fd02b27b8b4a68a87eb22ddb16f7",
-    "BuyAndBurnController": "0x3a6a2f72c34cf1d0dedb66a3cebba41b8afa0f3b8a1be825c19caa7de4f85e45",
-    "DAV_V3": "0x0c8c38e16b92c0974bd0f7b2b69c8aabae38fe8e1bda0c02b76ce3eb2dc0ad65",
+    "SWAP_V3": "",
+    "STATE_V3": "",
+    "AuctionAdmin": "",
+    "BuyAndBurnController": "",
+    "DAV_V3": "",
     "LPHelper": "",
-    "AirdropDistributor": "0xd1a53e6c1f70e0f5d7b1848fd3ba4df11ba1d96de065f5f7eb63a3e98dcc6d0e",
-    "SwapLens": "0x70b5b8a09c95f8a90d0eb33c6b02d4eed3ecc85a2b5bc1ffb8ca95c8fb1d0e4e"
+    "AirdropDistributor": "",
+    "SwapLens": ""
   }
 }

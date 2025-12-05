@@ -7,8 +7,8 @@ import {AuctionAdmin} from "../src/AuctionAdmin.sol";
 
 contract Deploy03_AuctionAdmin is Script {
     // Update this address after SWAP_V3 deployment
-    address constant SWAP_V3_ADDRESS = 0x27a7F4Adc36A8a94696BE83519AFd391A4719C7A; // SWAP_V3 from Deploy01
-    address constant GOV_ADDRESS = 0xBAaB2913ec979d9d21785063a0e4141e5B787D28;
+    address constant SWAP_V3_ADDRESS = 0x8172716bD7117461D4b20bD0434358F74244d4ec; // SWAP_V3 from Deploy01
+    address constant GOV_ADDRESS = 0x0f7F24c7F22e2Ca7052f051A295e1a5D3369cAcE;
 
     function run() external {
         require(SWAP_V3_ADDRESS != address(0), "Must update SWAP_V3_ADDRESS first");

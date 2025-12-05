@@ -7,7 +7,7 @@ import {SWAP_V3} from "../src/AuctionSwap.sol";
 
 contract Deploy01_SWAP_V3 is Script {
     // PulseChain Mainnet addresses
-    address constant GOV_ADDRESS = 0xBAaB2913ec979d9d21785063a0e4141e5B787D28;
+    address constant GOV_ADDRESS = 0x0f7F24c7F22e2Ca7052f051A295e1a5D3369cAcE;
 
     function run() external {
         console.log("=== DEPLOYING SWAP_V3 CONTRACT ===");
