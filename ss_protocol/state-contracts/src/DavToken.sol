@@ -150,9 +150,9 @@ contract DAV_V3 is
     address public STATE_TOKEN;
     
     /// @notice WPLS (Wrapped PLS) token address
-    /// @dev Immutable - set once in constructor for STATE→PLS conversions
+    /// @dev Set once in constructor for STATE→PLS conversions
     ///      Used in _convertStateToPLS() via AMM router.getAmountsOut()
-    address public immutable WPLS;
+    address public WPLS;
     
     /// @notice DAV token expiry period (30 days from mint for production)
     /// @dev Tokens become inactive after expiry but complete history is preserved for transparency

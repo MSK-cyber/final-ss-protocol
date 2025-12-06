@@ -10,7 +10,7 @@ import {DAV_V3} from "../src/DavToken.sol";
 contract Deploy06_AirdropDistributor is Script {
     // Update these addresses after previous deployments
     address constant SWAP_V3_ADDRESS = 0x8172716bD7117461D4b20bD0434358F74244d4ec; // SWAP_V3 from Deploy01
-    address constant DAV_V3_ADDRESS = 0xCC6EE62e3CBE05d622af0F08Bac76067e914C433; // DAV_V3 from Deploy05
+    address constant DAV_V3_ADDRESS = 0x92263Be97A691216f831CBb20760Eed0b4A96AC5; // DAV_V3 from Deploy05
     address constant STATE_V3_ADDRESS = 0x4e90670b4cDE8FF7cdDEeAf99AEFD68a114d9C01; // STATE_V3 from Deploy02
 
     function run() external {

@@ -61,7 +61,7 @@ contract Deploy05_DAV_V3 is Script {
         console.log("Token Details:");
         console.log("- Name: PulseDAV1");
         console.log("- Symbol: pDAV1");
-        console.log("- Initial governance mint: 2000 DAV tokens");
+        console.log("- Initial governance mint: 100 DAV tokens");
         console.log("- 80% mint fees go to BuyAndBurnController");
         console.log("- 10% holder rewards");
         console.log("- 5% development fees");

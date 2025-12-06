@@ -11,7 +11,7 @@ export const CHAIN_IDS = {
 // Contract addresses organized by chain
 export const CONTRACT_ADDRESSES = {
     [CHAIN_IDS.PULSECHAIN]: {
-        DAV_TOKEN: getAddress('contracts.core.DAV_V3', "0xCC6EE62e3CBE05d622af0F08Bac76067e914C433"),
+        DAV_TOKEN: getAddress('contracts.core.DAV_V3', "0x92263Be97A691216f831CBb20760Eed0b4A96AC5"),
     STATE_TOKEN: getAddress('contracts.core.STATE_V3', "0x4e90670b4cDE8FF7cdDEeAf99AEFD68a114d9C01"),
     AUCTION: getAddress('contracts.core.SWAP_V3', "0x8172716bD7117461D4b20bD0434358F74244d4ec"),
         LP_HELPER: getAddress('contracts.utilities.LPHelper', ""), // Deprecated - use SWAP_V3.createPoolOneClick()
@@ -19,7 +19,7 @@ export const CONTRACT_ADDRESSES = {
     BUY_BURN_CONTROLLER: getAddress('contracts.support.BuyAndBurnController', "0xf1Df5CD347A498768A44F7e0549F833525e3b751"),
         AUCTION_METRICS: getAddress('contracts.support.AuctionMetrics', ""), // Not deployed in this sequence
         SWAP_LENS: getAddress('contracts.support.SwapLens', "0x9683fC01A08Db24133B60cE51B4BEB616508a97E"),
-        AIRDROP_DISTRIBUTOR: getAddress('contracts.stages.AirdropDistributor', "0x40FD2DA5B8ECA575Ca10C06F9DC5aFD205D32630"),
+        AIRDROP_DISTRIBUTOR: getAddress('contracts.stages.AirdropDistributor', "0x813Aefbee80B02142a994D92B8b4F7b7C4F90Be9"),
         AUCTION_ADMIN: getAddress('contracts.stages.AuctionAdmin', "0xEab50ADaB223f96f139B75430dF7274aE66560Db"),
     },
     [CHAIN_IDS.POLYGON]: {
