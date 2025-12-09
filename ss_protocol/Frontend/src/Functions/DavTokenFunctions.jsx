@@ -105,6 +105,7 @@ export const DavProvider = ({ children }) => {
   const davHoldsSupportedRef = useRef(true);
   const davExpiredSupportedRef = useRef(true);
   const warnedNoCode = useRef({}); // map of address->boolean to avoid spam
+  const codeCache = useRef({}); // Cache for hasCode results to avoid redundant RPC calls
 
   // Generic safe call for BigInt-returning views with graceful fallback
   const safeCallBigInt = useCallback(async (label, call) => {
@@ -132,12 +133,18 @@ export const DavProvider = ({ children }) => {
     }
   }, []);
 
-  // Check if an address has contract code; if not, warn once and return false
+  // Check if an address has contract code; cached to avoid redundant RPC calls
   const hasCode = useCallback(async (addr, label) => {
     try {
       if (!addr) return false;
+      // Check cache first
+      if (codeCache.current[addr] !== undefined) {
+        return codeCache.current[addr];
+      }
       const code = await provider?.getCode?.(addr);
       const noCode = !code || code === '0x';
+      // Cache the result
+      codeCache.current[addr] = !noCode;
       if (noCode && !warnedNoCode.current[addr]) {
         warnedNoCode.current[addr] = true;
         console.warn(`${label || 'Contract'} at ${addr} has no code on this chain. Skipping reads. Check network/addresses.`);
@@ -280,18 +287,15 @@ export const DavProvider = ({ children }) => {
         currentBurnCycle: currentCycle.toString(),
       }));
 
+      // Pre-check contract codes once to avoid redundant RPC calls
+      const [davHasCode, stateHasCode] = await Promise.all([
+        hasCode(getDavAddress(), 'DAV'),
+        hasCode(getStateAddress(), 'STATE'),
+      ]);
+
       await Promise.allSettled([
         // Use safeEarned so UI never breaks on decode/mismatch; shows 0 instead
         fetchAndSet("claimableAmount", () => safeEarned(address)),
-        // REMOVED: These functions don't exist in new DAV contract
-        // fetchAndSet("userBurnedAmount", () => AllContracts.davContract.getUserBurnedAmount(address)),
-        // fetchAndSet("userBurnedAmountInCycle", () => AllContracts.davContract.cycleTotalBurned(currentCycle)),
-        // fetchAndSet("UserPercentage", () => AllContracts.davContract.getUserSharePercentage(address)),
-        // fetchAndSet("totalStateBurned", () => AllContracts.davContract.totalStateBurned()),
-        // fetchAndSet("pendingToken", () => AllContracts.davContract.getPendingTokenNames(address), false),
-        // fetchAndSet("tokenEntries", () => AllContracts.davContract.getAllTokenEntries(), false),
-        
-        // Fees removed in new contracts; skip fetching TOKEN_PROCESSING_FEE/TOKEN_WITHIMAGE_PROCESS
         // davHolds: use safe wrapper and disable if unsupported on-chain
         fetchAndSet("davHolds", () =>
           davHoldsSupportedRef.current
@@ -299,18 +303,15 @@ export const DavProvider = ({ children }) => {
             : Promise.resolve(0n)
         ),
         fetchAndSet("davGovernanceHolds", async () => {
-          const ok = await hasCode(getDavAddress(), 'DAV');
-          if (!ok) return 0n;
+          if (!davHasCode) return 0n;
           return safeCallBigInt('davGovernanceHolds', () => davRead.balanceOf(address));
         }),
         fetchAndSet("stateHolding", async () => {
-          const ok = await hasCode(getStateAddress(), 'STATE');
-          if (!ok) return 0n;
+          if (!stateHasCode) return 0n;
           return safeCallBigInt('stateHolding', () => stateRead.balanceOf(address));
         }),
         fetchAndSet("stateHoldingOfSwapContract", async () => {
-          const ok = await hasCode(getStateAddress(), 'STATE');
-          if (!ok) return 0n;
+          if (!stateHasCode) return 0n;
           return safeCallBigInt('stateHoldingOfSwapContract', () => stateRead.balanceOf(getAuctionAddress()));
         }),
         fetchAndSet(
@@ -329,8 +330,7 @@ export const DavProvider = ({ children }) => {
           false
         ),
         fetchAndSet("ReferralAMount", async () => {
-          const ok = await hasCode(getDavAddress(), 'DAV');
-          if (!ok) return 0n;
+          if (!davHasCode) return 0n;
           const fn = davRead?.referralRewards;
           if (typeof fn !== 'function') return 0n;
           return safeCallBigInt('ReferralAMount', () => fn(address));
@@ -363,7 +363,7 @@ export const DavProvider = ({ children }) => {
         console.warn('getROI unavailable; falling back to client-side estimate', e?.message || e);
       }
 
-      // Compute client-side ROI mirroring on-chain logic
+      // Compute client-side ROI mirroring on-chain logic (optimized)
       try {
         if (!address || !AllContracts?.AuctionContract || !AllContracts?.stateContract || !AllContracts?.davContract) {
           throw new Error('Contracts not ready');
@@ -373,33 +373,46 @@ export const DavProvider = ({ children }) => {
         let totalStateValue = BigInt(stateBalWei || 0n);
 
         // 2) Add auction tokens converted to STATE via getRatioPrice
-        for (let i = 0; i < 100; i++) {
-          try {
-            const tokenAddr = await AllContracts.AuctionContract.autoRegisteredTokens(i);
-            if (!tokenAddr || tokenAddr === ethers.ZeroAddress) break;
-            // Get user balance
-            const tokenCtr = new ethers.Contract(tokenAddr, ERC20_ABI, (provider || AllContracts.AuctionContract.runner));
-            const userBal = await tokenCtr.balanceOf(address).catch(() => 0n);
-            if ((userBal ?? 0n) > 0n) {
-              // Ratio: STATE per token (18 decimals)
-              const ratio = await AllContracts.AuctionContract.getRatioPrice(tokenAddr).catch(() => 0n);
-              if ((ratio ?? 0n) > 0n) {
-                // IMPORTANT: normalize by token's own decimals, not 1e18.
-                // addStateWei = (userBalSmallestUnits * ratio18) / (10^tokenDecimals)
-                let decimals = 18;
-                try {
-                  const DEC_ABI = ['function decimals() view returns (uint8)'];
-                  const decCtr = new ethers.Contract(tokenAddr, DEC_ABI, (provider || AllContracts.AuctionContract.runner));
-                  decimals = Number(await decCtr.decimals());
-                } catch {}
-                const denom = BigInt(10) ** BigInt(Number.isFinite(decimals) && decimals >= 0 ? decimals : 18);
-                const addState = (BigInt(userBal) * BigInt(ratio)) / denom;
-                totalStateValue += addState;
+        // Optimized: Get token count first, then batch fetch (limit to 10 tokens max for performance)
+        try {
+          const tokenCount = await AllContracts.AuctionContract.tokenCount?.().catch(() => 0);
+          const maxTokens = Math.min(Number(tokenCount) || 0, 10); // Limit to 10 tokens for performance
+          
+          if (maxTokens > 0) {
+            // Batch fetch token addresses first
+            const tokenAddrs = await Promise.all(
+              Array.from({ length: maxTokens }, (_, i) =>
+                AllContracts.AuctionContract.autoRegisteredTokens(i).catch(() => null)
+              )
+            );
+            
+            // Filter valid addresses and batch fetch balances
+            const validTokens = tokenAddrs.filter(addr => addr && addr !== ethers.ZeroAddress);
+            for (const tokenAddr of validTokens) {
+              try {
+                const tokenCtr = new ethers.Contract(tokenAddr, ERC20_ABI, (provider || AllContracts.AuctionContract.runner));
+                const userBal = await tokenCtr.balanceOf(address).catch(() => 0n);
+                if ((userBal ?? 0n) > 0n) {
+                  const ratio = await AllContracts.AuctionContract.getRatioPrice(tokenAddr).catch(() => 0n);
+                  if ((ratio ?? 0n) > 0n) {
+                    let decimals = 18;
+                    try {
+                      const DEC_ABI = ['function decimals() view returns (uint8)'];
+                      const decCtr = new ethers.Contract(tokenAddr, DEC_ABI, (provider || AllContracts.AuctionContract.runner));
+                      decimals = Number(await decCtr.decimals());
+                    } catch {}
+                    const denom = BigInt(10) ** BigInt(Number.isFinite(decimals) && decimals >= 0 ? decimals : 18);
+                    const addState = (BigInt(userBal) * BigInt(ratio)) / denom;
+                    totalStateValue += addState;
+                  }
+                }
+              } catch {
+                // Skip failed token
               }
             }
-          } catch {
-            break; // Out of range or call failed like contract's try/catch loop
           }
+        } catch (e) {
+          console.warn('ROI token loop skipped:', e?.message);
         }
 
         // 3) Convert total STATE to PLS via STATE/WPLS pool reserves (robust, with fallbacks)
@@ -656,23 +669,23 @@ export const DavProvider = ({ children }) => {
   useEffect(() => {
     if (!AllContracts?.davContract || !address) return;
 
-    // Prefer block-based refresh via read-only provider polling
-    const onBlock = () => {
-      fetchTimeUntilNextClaim();
-    };
-    try { provider?.on?.('block', onBlock); } catch {}
+    // REMOVED block-based refresh - it was causing memory leaks by firing every 2-3 seconds
+    // Block listeners on PulseChain fire too frequently and cause excessive RPC calls
+    // Instead, we rely on the periodic interval below which is much safer
 
-    // Lightweight periodic keepalive in case block polling stalls
+    // Lightweight periodic keepalive - this is the only polling mechanism now
     const interval = setInterval(() => {
       fetchTimeUntilNextClaim();
       fetchAndStoreTokenEntries();
-    }, 15000); // every 15s
+    }, 60000); // every 60s - reduced from 15s to prevent memory issues
+
+    // Initial fetch
+    fetchTimeUntilNextClaim();
 
     return () => {
-      try { provider?.off?.('block', onBlock); } catch {}
       clearInterval(interval);
     };
-  }, [fetchTimeUntilNextClaim, AllContracts?.davContract, address, provider]);
+  }, [fetchTimeUntilNextClaim, AllContracts?.davContract, address]);
 
   // Revalidate on window focus/visibility gain to recover from background throttling
   useEffect(() => {
@@ -697,7 +710,7 @@ export const DavProvider = ({ children }) => {
 
     const deploymentInterval = setInterval(() => {
       isTokenDeployed();
-    }, 10000); // Check deployment status every 10 seconds instead of every second
+    }, 60000); // Check deployment status every 60s - reduced from 10s to prevent memory issues
 
     return () => clearInterval(deploymentInterval);
   }, [names, AllContracts?.AuctionContract]);

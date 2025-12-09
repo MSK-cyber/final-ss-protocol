@@ -1,4 +1,4 @@
-import React, { useMemo, useContext, useState, useEffect } from "react";
+import React, { useMemo, useContext, useState, useEffect, useCallback, useRef } from "react";
 import { ethers } from "ethers";
 import "../../Styles/AuctionBoxes.css";
 import { useSwapContract } from "../../Functions/SwapContractFunctions";
@@ -75,20 +75,24 @@ const AuctionBoxes = () => {
 		}, []);
 
 		// Continuously resolve reverse status for the active token (prefer SwapLens snapshot; fallback to on-chain)
+		// OPTIMIZED: Removed JSON.stringify(AuctionTime) - was causing re-fetch every second
+		const lastReverseCheckRef = useRef(0);
 		useEffect(() => {
 			let cancelled = false;
+			// Debounce: only check every 10 seconds max
+			const now = Date.now();
+			if (now - lastReverseCheckRef.current < 10000) return;
+			lastReverseCheckRef.current = now;
+			
 			(async () => {
 				try {
 					if (!AllContracts?.AuctionContract) { 
-						console.log('[Reverse Detection] No AuctionContract available');
 						setReverseNow(null); 
 						return; 
 					}
 					// Use centralized today's token address from context
 					let addr = todayTokenAddress;
-					console.log('[Reverse Detection] Using todayTokenAddress from context:', addr);
 					if (!addr || addr === ethers.ZeroAddress) { 
-						console.log('[Reverse Detection] No valid token address');
 						setReverseNow(null); 
 						return; 
 					}
@@ -100,15 +104,12 @@ const AuctionBoxes = () => {
 						}
 						return;
 					}
-								console.log('[Reverse Detection] Checking isReverseAuctionActive for:', addr);
 								let rev = false;
 								try {
 									rev = await AllContracts.AuctionContract.isReverseAuctionActive(addr);
 								} catch (e) {
-									console.warn('[Reverse Detection] isReverseAuctionActive failed:', e?.shortMessage || e?.message || e);
 									rev = false; // Treat failures as not in reverse to avoid UI flicker
 								}
-								console.log('[Reverse Detection] Result:', rev);
 								if (!cancelled) {
 									const val = Boolean(rev);
 									setReverseNow(val);
@@ -116,12 +117,11 @@ const AuctionBoxes = () => {
 									setLastKnownMode(val ? 'reverse' : 'normal');
 								}
 				} catch (e) {
-								console.warn('[Reverse Detection] Error:', e?.shortMessage || e?.message || e);
 								if (!cancelled) setReverseNow(false);
 				}
 			})();
 			return () => { cancelled = true; };
-		}, [AllContracts?.AuctionContract, todayTokenAddress, reverseWindowActive, JSON.stringify(AuctionTime)]);
+		}, [AllContracts?.AuctionContract, todayTokenAddress, reverseWindowActive]);
 
 	// Decide page-level mode: reverse if any token marked reversed and no normal auction active
 					const candidates = useMemo(() => {
@@ -144,9 +144,14 @@ const AuctionBoxes = () => {
 					}, [tokens]);
 
 					const [index, setIndex] = useState(0);
+					// OPTIMIZED: Use stable reference instead of JSON.stringify
+					const candidatesLengthRef = useRef(0);
 					useEffect(() => {
-						setIndex(0);
-					}, [JSON.stringify(candidates)]);
+						if (candidates.length !== candidatesLengthRef.current) {
+							candidatesLengthRef.current = candidates.length;
+							setIndex(0);
+						}
+					}, [candidates.length]);
 
 	// Prefer live token-of-day selection immediately when available to avoid stale active flags
 	const liveCandidate = useMemo(() => {
@@ -173,26 +178,20 @@ const AuctionBoxes = () => {
 			// If explicitly forced via URL param, honor it for UI preview
 			if (forcedMode) return forcedMode;
 			// Prefer on-chain flag; fall back to token-derived flag
-			console.log('[Mode Calculation] reverseNow:', reverseNow, 'selected:', selected?.id);
 			if (reverseNow === true) {
-				console.log('[Mode Calculation] → reverse (from reverseNow=true)');
 				return "reverse";
 			}
 			if (reverseNow === false) {
-				console.log('[Mode Calculation] → normal (from reverseNow=false)');
 				return "normal";
 			}
 			// When reverseNow is temporarily unknown (null), keep last known mode to avoid UI flip
 			if (lastKnownMode === 'reverse' || lastKnownMode === 'normal') {
-				console.log('[Mode Calculation] → sticky', lastKnownMode, '(lastKnownMode)');
 				return lastKnownMode;
 			}
 			if (!selected) {
-				console.log('[Mode Calculation] → normal (no selected token)');
 				return "normal";
 			}
 			const revFlag = selected.isReversing === true || selected.isReversing === "true";
-			console.log('[Mode Calculation] revFlag from token:', revFlag);
 			return revFlag ? "reverse" : "normal";
 		}, [selected, reverseNow, lastKnownMode, forcedMode]);
 
@@ -415,7 +414,7 @@ const AuctionBoxes = () => {
 	};	const [busy, setBusy] = useState(false);
 
 	// Helpers to resolve flags from name/address-keyed maps
-	const resolveFlag = (mapObj, nameKey, addrKey) => {
+	const resolveFlag = useCallback((mapObj, nameKey, addrKey) => {
 		if (!mapObj) return false;
 		let v = mapObj[nameKey];
 		if (typeof v === 'string') v = v.toLowerCase() === 'true';
@@ -424,18 +423,27 @@ const AuctionBoxes = () => {
 		}
 		if (typeof v === 'string') v = v.toLowerCase() === 'true';
 		return Boolean(v);
-	};
+	}, []);
 
-	// Refresh available DAV units and pending STATE when selection/live token changes
+	// OPTIMIZED: Debounced refresh - only fetch when token actually changes, not on every tick
+	const lastRefreshRef = useRef({ id: null, timestamp: 0 });
 	useEffect(() => {
+		const now = Date.now();
+		const tokenId = selected?.id || todayTokenAddress;
+		// Only refresh if token changed OR 30 seconds passed
+		if (lastRefreshRef.current.id === tokenId && now - lastRefreshRef.current.timestamp < 30000) {
+			return;
+		}
+		lastRefreshRef.current = { id: tokenId, timestamp: now };
+		
 		try { getInputAmount?.(); } catch {}
-			try { getOutPutAmount?.(); } catch {}
+		try { getOutPutAmount?.(); } catch {}
 		// Also refresh live ratio map to keep TokenRatio current for the selected token
 		try { getTokenRatio?.(); } catch {}
-			// Refresh airdrop claimable amounts for Step 1 correctness
-			try { getAirdropAmount?.(); } catch {}
+		// Refresh airdrop claimable amounts for Step 1 correctness
+		try { getAirdropAmount?.(); } catch {}
 	// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [selected?.id, todayTokenAddress, JSON.stringify(AuctionTime), address, davHolds, JSON.stringify(AirdropClaimed)]);
+	}, [selected?.id, todayTokenAddress, address, davHolds]);
 
 	// Compute dynamic airdrop/ratio texts with fixed phrasing, but prevent post-action values from dropping to 0
 const selectedKey = selected?.id || todayTokenSymbol || "";
@@ -459,8 +467,18 @@ const availableUnits = availableUnitsForToken;
 	// Cycle-aware airdrop display: before claim show claimable (newUnits * perDav), after claim show consumedUnitsCurrentCycle * perDav
 	const [claimableAmountCycleAware, setClaimableAmountCycleAware] = useState(0);
 	const [consumedUnitsCurrentCycle, setConsumedUnitsCurrentCycle] = useState(0);
+	// OPTIMIZED: Debounce cycle-aware fetch - removed JSON.stringify(AuctionTime)
+	const lastCycleAwareFetchRef = useRef({ key: null, timestamp: 0 });
 	useEffect(() => {
 		let cancelled = false;
+		const now = Date.now();
+		// Only fetch if address/token changed OR 30 seconds passed
+		const fetchKey = `${address}-${selectedAddrKey}`;
+		if (lastCycleAwareFetchRef.current.key === fetchKey && now - lastCycleAwareFetchRef.current.timestamp < 30000) {
+			return;
+		}
+		lastCycleAwareFetchRef.current = { key: fetchKey, timestamp: now };
+		
 		(async () => {
 			try {
 				if (!address || !AllContracts?.airdropDistributor || !selectedAddrKey) {
@@ -488,8 +506,8 @@ const availableUnits = availableUnitsForToken;
 				if (!cancelled) { setClaimableAmountCycleAware(0); setConsumedUnitsCurrentCycle(0); }
 			}
 		})();
-		// refresh on step completions/time changes to keep display aligned
-	}, [address, AllContracts?.airdropDistributor, selectedAddrKey, JSON.stringify(AirdropClaimed), JSON.stringify(AuctionTime)]);
+		return () => { cancelled = true; };
+	}, [address, AllContracts?.airdropDistributor, selectedAddrKey]);
 
 	const claimPerUnit = airdropPerDav; // on-chain constant when available
 const fullTokenName = (selected?.name && selected?.name !== selected?.id ? selected?.name : null)
@@ -500,8 +518,18 @@ const fullTokenName = (selected?.name && selected?.name !== selected?.id ? selec
 	// Cycle-aware Ratio Swap display (Step 2): after burning, keep showing values based on consumed units/tokens this cycle
 	const [ratioCycleBurnTokens, setRatioCycleBurnTokens] = useState(0);
 	const [ratioCycleDavUnitsUsed, setRatioCycleDavUnitsUsed] = useState(0);
+	// OPTIMIZED: Debounce ratio cycle fetch - removed JSON.stringify triggers
+	const lastRatioCycleFetchRef = useRef({ key: null, timestamp: 0 });
 	useEffect(() => {
 		let cancelled = false;
+		const now = Date.now();
+		const fetchKey = `${address}-${selectedAddrKey}`;
+		// Only fetch if key changed OR 30 seconds passed
+		if (lastRatioCycleFetchRef.current.key === fetchKey && now - lastRatioCycleFetchRef.current.timestamp < 30000) {
+			return;
+		}
+		lastRatioCycleFetchRef.current = { key: fetchKey, timestamp: now };
+		
 		(async () => {
 			try {
 				if (!address || !AllContracts?.AuctionContract || !selectedAddrKey) {
@@ -530,8 +558,8 @@ const fullTokenName = (selected?.name && selected?.name !== selected?.id ? selec
 				if (!cancelled) { setRatioCycleBurnTokens(0); setRatioCycleDavUnitsUsed(0); }
 			}
 		})();
-		// refresh when selection changes, user burns, or time advances
-	}, [address, AllContracts?.AuctionContract, selectedAddrKey, todayTokenDecimals, TOKENS, JSON.stringify(userHasBurned), JSON.stringify(AuctionTime)]);
+		return () => { cancelled = true; };
+	}, [address, AllContracts?.AuctionContract, selectedAddrKey, todayTokenDecimals, TOKENS, selected?.id]);
 
 	// Sticky (non-zero) display values to avoid showing 0 after steps complete; reset when token selection changes
 	const [stickyVals, setStickyVals] = useState({ airdrop: null, burn: null, est: null });
@@ -549,28 +577,17 @@ const fullTokenName = (selected?.name && selected?.name !== selected?.id ? selec
 		const idKey = selected?.id || todayTokenSymbol || '';
 		const addrKey = (TOKENS?.[selected?.id]?.address) || selected?.address || todayTokenAddress || '';
 		const claimedOnce = resolveFlag(AirdropClaimed, idKey, addrKey);
-		const claimableAmount = Number(selected ? AirDropAmount?.[selected.id] : 0);
-		const doneAirdrop = claimedOnce && !(claimableAmount > 0);
+		// Optimized & simplified: a step is considered "done" as soon as
+		// the on-chain flag reports it happened at least once. We no longer
+		// gate ticks on remaining DAV units or pending STATE, which caused
+		// checkmarks to disappear even after successful completion.
+		const doneAirdrop = claimedOnce;
 		const burnedOnce = resolveFlag(userHasBurned, idKey, addrKey);
-		const doneRatioSwap = burnedOnce && !(Number(availableUnitsForToken) > 0);
-		// Dex swap done check replication
-		let pending = 0;
-		try {
-			const byName = OutPutAmount?.[idKey];
-			const byAddr = OutPutAmount?.[addrKey] ?? OutPutAmount?.[addrKey?.toLowerCase?.()] ?? OutPutAmount?.[addrKey?.toUpperCase?.()];
-			const v = byAddr !== undefined ? byAddr : byName;
-			pending = Number(v || 0);
-			if (!Number.isFinite(pending)) pending = 0;
-		} catch { pending = 0; }
+		const doneRatioSwap = burnedOnce;
 		const swappedOnce = resolveFlag(userHashSwapped, idKey, addrKey);
-		// Show Step 3 check only if:
-		// - user swapped at least once (swappedOnce)
-		// - no pending STATE left to swap (pending <= 0)
-		// - AND no additional DAV units are currently available to burn for this token
-		//   (so the user can't start a new round right now)
-		const doneDexSwap = swappedOnce && !(pending > 0) && !(Number(availableUnitsForToken) > 0);
+		const doneDexSwap = swappedOnce;
 		return { doneAirdrop, doneRatioSwap, doneDexSwap };
-	}, [selected?.id, todayTokenSymbol, todayTokenAddress, TOKENS, AirdropClaimed, AirDropAmount, userHasBurned, availableUnitsForToken, OutPutAmount, userHashSwapped]);
+	}, [selected?.id, todayTokenSymbol, todayTokenAddress, TOKENS, AirdropClaimed, userHasBurned, userHashSwapped]);
 
 	// Convenient flag for render-time decisions (show snapshots only while all steps remain completed)
 	const allDone = completionFlags.doneAirdrop && completionFlags.doneRatioSwap && completionFlags.doneDexSwap;
@@ -616,35 +633,46 @@ const fullTokenName = (selected?.name && selected?.name !== selected?.id ? selec
 		}
 	}, [selectedAddrKey]);
 
-	// Raw calculations
-	// Pre-claim amount from distributor (preferred), fallback to availableUnits * perDav
-	const rawClaimableFromDistributor = Math.max(0, Number(claimableAmountCycleAware || 0));
-	const rawClaimableFallback = Math.max(0, Number(availableUnits) * claimPerUnit);
-	const rawClaimable = rawClaimableFromDistributor > 0 ? rawClaimableFromDistributor : rawClaimableFallback;
-	const rawBurn = Math.max(0, Math.floor(Number(burnAmount || 0)));
-	const rawEst = Math.max(0, Number(expectedStateDouble || 0));
-
-	// Capture last non-zero values
-	useEffect(() => { if (rawClaimable > 0) setStickyVals((s) => (s.airdrop === rawClaimable ? s : { ...s, airdrop: rawClaimable })); }, [rawClaimable]);
-	useEffect(() => { if (rawBurn > 0) setStickyVals((s) => (s.burn === rawBurn ? s : { ...s, burn: rawBurn })); }, [rawBurn]);
-	useEffect(() => { if (rawEst > 0) setStickyVals((s) => (s.est === rawEst ? s : { ...s, est: rawEst })); }, [rawEst]);
+	// ============ SUBTITLE AMOUNT LOGIC ============
+	// User requirement:
+	// - activeDav = total DAV holdings (davHolds)
+	// - consumedDav = DAV used this cycle (max of airdrop distributor and auction contract)
+	// - unusedDav = activeDav - consumedDav
+	// 
+	// Priority:
+	// 1. If unusedDav > 0 (user has DAV not yet used this cycle): show values based on unusedDav ONLY
+	//    This handles the case where user completes auction, buys more DAV, and wants to see only new DAV
+	// 2. If unusedDav == 0 (all DAV consumed this cycle): show values based on consumedDav
+	//    This shows what user has done this cycle when all steps are complete
+	
+	const activeDav = Math.max(0, Number(davHolds || 0));
+	// Use the maximum of both consumed sources to get the best available data
+	const consumedFromAirdrop = Math.max(0, Number(consumedUnitsCurrentCycle || 0));
+	const consumedFromAuction = Math.max(0, Number(ratioCycleDavUnitsUsed || 0));
+	const consumedDavUnits = Math.max(consumedFromAirdrop, consumedFromAuction);
+	
+	// Calculate unused DAV = active DAV - consumed DAV (but not below 0)
+	const unusedDavUnits = Math.max(0, activeDav - consumedDavUnits);
+	
+	// Determine which DAV count to use for display
+	// If user has unused DAV (new purchases or not yet used): show only unused
+	// If all DAV is consumed: show the consumed amount
+	const displayDavUnits = unusedDavUnits > 0 ? unusedDavUnits : consumedDavUnits;
+	
+	// Calculate display amounts based on the chosen DAV units
+	const displayAirdropAmount = displayDavUnits * Number(claimPerUnit || 0);
+	const displayBurnAmount = displayDavUnits * Number(tokensPerDav || 0);
+	const displayEstState = displayBurnAmount > 0 && Number(effectiveLiveRatio || 0) > 0
+		? displayBurnAmount * Number(effectiveLiveRatio) * 2
+		: 0;
 
 	const airdropText = (() => {
-		if (allDone && snapshots.airdrop !== null) {
-			return `Claim Airdrop of ${formatWithCommas(snapshots.airdrop)} ${fullTokenName} tokens`;
-		}
-		// If user has already claimed this cycle and claimable amount is zero, show consumed-units based amount
-		const consumedAmount = Math.max(0, Number(consumedUnitsCurrentCycle || 0) * Number(claimPerUnit || 0));
-		const hasClaimableNow = rawClaimableFromDistributor > 0;
-		const display = hasClaimableNow
-			? rawClaimableFromDistributor
-			: (consumedAmount > 0
-				? consumedAmount
-				: (rawClaimableFallback > 0 ? rawClaimableFallback : (stickyVals.airdrop ?? 0)));
-		return `Claim Airdrop of ${formatWithCommas(display)} ${fullTokenName} tokens`;
+		// Show airdrop amount based on current unused DAV, or consumed DAV if none left
+		return `Claim Airdrop of ${formatWithCommas(displayAirdropAmount)} ${fullTokenName} tokens`;
 	})();
 
 // When the live auction token (todayTokenAddress) appears in candidates, auto-select it (address-based match)
+// OPTIMIZED: Use stable reference instead of JSON.stringify
 useEffect(() => {
 	if (!todayTokenAddress || !candidates || candidates.length === 0) return;
 	const findAddr = (t) => {
@@ -656,7 +684,10 @@ useEffect(() => {
 	if (pos >= 0 && pos !== index) {
 		setIndex(pos);
 	}
-}, [todayTokenAddress, JSON.stringify(candidates)]);		const doClaim = async () => {
+}, [todayTokenAddress, candidates.length, TOKENS, index]);
+
+	// OPTIMIZED: Wrap handlers in useCallback to prevent re-creation on every render
+	const doClaim = useCallback(async () => {
 		if (busy) return;
 		if (!address) { toast.error("Connect your wallet to continue"); return; }
 		// Block claim if reverse is active per on-chain rule
@@ -673,7 +704,9 @@ useEffect(() => {
 		} catch {}
 		setBusy(true);
 		try { await CheckMintBalance(selectedAddrKey || todayTokenAddress); } finally { setBusy(false); }
-	};			const doRatioSwap = async () => {
+	}, [busy, address, AllContracts?.AuctionContract, todayTokenAddress, selectedAddrKey, CheckMintBalance]);
+
+	const doRatioSwap = useCallback(async () => {
 			if (!address || busy) { if (!address) toast.error("Connect your wallet to continue"); return; }
 			toast("Starting Ratio Swap…", { position: 'top-center' });
 			setBusy(true);
@@ -682,9 +715,9 @@ useEffect(() => {
 					const id = selected?.id || 'GLOBAL';
 					await performRatioSwap(id, selected?.id, tokenAddress);
 			} finally { setBusy(false); }
-		};
+		}, [address, busy, selected, TOKENS, performRatioSwap]);
 
-		const doDexSwap = async () => {
+		const doDexSwap = useCallback(async () => {
 			if (!selected || !address || busy) { if (!address) toast.error("Connect your wallet to continue"); if (!selected) toast.error("No active token selected"); return; }
 			const tokenOutAddress = TOKENS[selected.id]?.address;
 			if (!tokenOutAddress) { toast.error("Token address not found for swap"); return; }
@@ -698,10 +731,10 @@ useEffect(() => {
 				ERC20_ABI,
 				stateAddress,
 			); } finally { setBusy(false); }
-		};
+		}, [selected, address, busy, TOKENS, handleDexTokenSwap, stateOutForDex, signer, stateAddress]);
 
 		// Step 3 via contract pool swap (swapTokens)
-			const doContractSwap = async () => {
+		const doContractSwap = useCallback(async () => {
 			if (!address || busy) { if (!address) toast.error("Connect your wallet to continue"); return; }
 									toast("Starting Swap…", { position: 'top-center' });
 			setBusy(true);
@@ -710,7 +743,7 @@ useEffect(() => {
 					const id = selected?.id || 'GLOBAL';
 					await SwapTokens(id, selected?.id, tokenAddress);
 				} finally { setBusy(false); }
-		};
+		}, [address, busy, selected, TOKENS, SwapTokens]);
 
 						const noTokens = !candidates || candidates.length === 0;
 
@@ -723,45 +756,19 @@ useEffect(() => {
 						? `${isReverse ? "Reverse Auction" : "Auction"} — ${selectedDisplayName}`
 						: (todayTokenName ? `Auction — ${todayTokenName}` : (todayTokenSymbol ? `Auction — ${todayTokenSymbol}` : "Auction"));
 
-					// Keep Ratio Swap subtitle stable: fixed phrasing with dynamic numbers only
+					// Keep Ratio Swap subtitle stable: based on unused DAV or consumed DAV
 					const ratioTextNormal = (() => {
-						if (allDone && snapshots.burnTokens !== null) {
-							const burnStr = formatWithCommas(snapshots.burnTokens);
-							if (snapshots.estState && snapshots.estState > 0) {
-								const estDisplay = snapshots.estState >= 1 ? formatWithCommas(Math.floor(snapshots.estState)) : snapshots.estState.toFixed(6);
-								return `Burn ${burnStr} ${selectedDisplayName || (selected?.id || ratioKey)} tokens for ${estDisplay} STATE tokens`;
-							}
-							return `Burn ${burnStr} ${selectedDisplayName || (selected?.id || ratioKey)} tokens for 2× STATE tokens`;
-						}
 						const fullName = selectedDisplayName || (selected?.id || ratioKey);
-						// Prefer live raw values; then cycle-aware burned values; then sticky fallback
-						const burnCycle = Number(ratioCycleBurnTokens || 0);
-						const burnFromUnits = Number(ratioCycleDavUnitsUsed || 0) * Number(tokensPerDav || 0);
-						// Also consider current-cycle used DAV units as a fallback for burned tokens calculation
-						const burnFromCurrentCycleUnits = Number(consumedUnitsCurrentCycle || 0) * Number(tokensPerDav || 0);
-						const burnDisplay = rawBurn > 0
-							? rawBurn
-							: (burnCycle > 0 ? burnCycle : (burnFromUnits > 0 ? burnFromUnits : (burnFromCurrentCycleUnits > 0 ? burnFromCurrentCycleUnits : (stickyVals.burn ?? 0))));
-						const burnStr = formatWithCommas(burnDisplay);
+						// Use the same displayBurnAmount calculated earlier (based on unused or consumed DAV)
+						const burnStr = formatWithCommas(displayBurnAmount);
+						const estStr = displayEstState > 0
+							? (displayEstState >= 1 ? formatWithCommas(Math.floor(displayEstState)) : displayEstState.toFixed(6))
+							: null;
 
-						// Estimate STATE: prefer live rawEst; else compute from cycle-aware burns when ratio known; else sticky
-						let estDisplay = rawEst;
-						if (!(estDisplay > 0) && effectiveLiveRatio > 0) {
-							if (burnCycle > 0) {
-								estDisplay = burnCycle * effectiveLiveRatio * 2;
-							} else if (burnFromUnits > 0) {
-								estDisplay = burnFromUnits * effectiveLiveRatio * 2;
-							} else if (burnFromCurrentCycleUnits > 0) {
-								estDisplay = burnFromCurrentCycleUnits * effectiveLiveRatio * 2;
-							}
+						if (effectiveLiveRatio > 0 && estStr) {
+							return `Burn ${burnStr} ${fullName} tokens for ${estStr} STATE tokens`;
 						}
-						if (!(estDisplay > 0)) estDisplay = (stickyVals.est ?? 0);
-
-						if (effectiveLiveRatio > 0 && estDisplay > 0) {
-							const est = estDisplay >= 1 ? formatWithCommas(Math.floor(estDisplay)) : Number(estDisplay).toFixed(6);
-							return `Burn ${burnStr} ${fullName} tokens for ${est} STATE tokens`;
-						}
-						// Fallback keeps stable wording without diagnostics
+						// Fallback when no ratio available
 						return `Burn ${burnStr} ${fullName} tokens for 2× STATE tokens`;
 					})();
 
@@ -777,7 +784,8 @@ useEffect(() => {
 							return base;
 						})();
 
-												const doReverseSwap = async () => {
+						// OPTIMIZED: Wrap in useCallback
+						const doReverseSwap = useCallback(async () => {
 							if (!address || busy) { if (!address) toast.error("Connect your wallet to continue"); return; }
 								toast("Starting Reverse Swap…", { position: 'top-center' });
 							setBusy(true);
@@ -789,50 +797,30 @@ useEffect(() => {
 								const id = selected?.id || 'GLOBAL';
 								await performReverseSwapStep1(id, selected?.id, tokenAddress);
 							} finally { setBusy(false); }
-						};
+						}, [address, busy, selected, TOKENS, reverseNow, todayTokenAddress, performReverseSwapStep1]);
 
-						// Build DEX row dynamic description for normal mode
+						// Build DEX row description for normal mode based on unused/consumed DAV
 						const dexRowText = (() => {
-							if (allDone && snapshots.burnTokens !== null) {
-								// Show frozen estimate STATE -> TOKEN quote if ratio was captured
-								const tokenName = selectedDisplayName || selected?.id || todayTokenSymbol || "TOKEN";
-								const ratioUsed = snapshots.ratioAtBurn || 0;
-								if (ratioUsed > 0 && snapshots.estState > 0) {
-									const stateStr = snapshots.estState >= 1 ? formatWithCommas(Math.floor(snapshots.estState)) : snapshots.estState.toFixed(6);
-									const tokenOut = snapshots.estState / ratioUsed; // inverse conversion
-									const tokenStr = tokenOut >= 1 ? formatWithCommas(Math.floor(tokenOut)) : tokenOut.toFixed(6);
-									return `Swap ${stateStr} STATE tokens for ${tokenStr} ${tokenName} tokens`;
-								}
-								return 'Use DEX to swap STATE for TOKEN';
-							}
 							if (!selected) return "Use DEX to swap STATE for TOKEN";
 							const tokenName = selectedDisplayName || selected?.id || todayTokenSymbol || "TOKEN";
-								const ratio = effectiveLiveRatio;
-								// Pending STATE from Step 2 map if any (normal mode can still have a balance from previous window)
-								const tokenAddress = selected ? (TOKENS[selected.id]?.address || selected.address) : undefined;
-								const pendingState = tokenAddress ? (reverseStateMap?.[tokenAddress] || 0) : 0;
-								// Prefer using the estimated STATE from Ratio Swap (expectedStateDouble) if available
-								if (Number(ratio) > 0 && Number(expectedStateDouble) > 0) {
-									const tokenOutFromExpected = Number(expectedStateDouble) / Number(ratio);
-									const stateStr = Number(expectedStateDouble) >= 1 ? formatWithCommas(Math.floor(Number(expectedStateDouble))) : Number(expectedStateDouble).toFixed(6);
-									const tokenStr = tokenOutFromExpected >= 1 ? formatWithCommas(Math.floor(tokenOutFromExpected)) : tokenOutFromExpected.toFixed(6);
-									return `Swap ${stateStr} STATE tokens for ${tokenStr} ${tokenName} tokens`;
-								}
-								if (Number(ratio) > 0 && Number(pendingState) > 0) {
-									const tokenOut = Number(pendingState) / Number(ratio);
-									const stateStr = pendingState >= 1 ? formatWithCommas(Math.floor(pendingState)) : Number(pendingState).toFixed(6);
-									const tokenStr = tokenOut >= 1 ? formatWithCommas(Math.floor(tokenOut)) : tokenOut.toFixed(6);
-									return `Swap ${stateStr} STATE tokens for ${tokenStr} ${tokenName} tokens`;
-								}
-								if (Number(ratio) > 0) {
-									// Show a simple quote when there's a live ratio but no pending STATE: 1 STATE ≈ X TOKEN
-									const perState = 1 / Number(ratio);
-									const quote = perState >= 1 ? formatWithCommas(Math.floor(perState)) : perState.toFixed(6);
-									return `Swap STATE for ${tokenName} • 1 STATE ≈ ${quote} ${tokenName}`;
-								}
-								// Stable generic fallback without diagnostics
-								return 'Use DEX to swap STATE for TOKEN';
-							})();
+							const ratio = Number(effectiveLiveRatio || 0);
+							
+							// Use the same displayEstState calculated earlier (based on unused or consumed DAV)
+							if (ratio > 0 && displayEstState > 0) {
+								const stateStr = displayEstState >= 1 ? formatWithCommas(Math.floor(displayEstState)) : displayEstState.toFixed(6);
+								const tokenOut = displayEstState / ratio;
+								const tokenStr = tokenOut >= 1 ? formatWithCommas(Math.floor(tokenOut)) : tokenOut.toFixed(6);
+								return `Swap ${stateStr} STATE tokens for ${tokenStr} ${tokenName} tokens`;
+							}
+							if (ratio > 0) {
+								// Simple, stable quote: 1 STATE ≈ X TOKEN
+								const perState = 1 / ratio;
+								const quote = perState >= 1 ? formatWithCommas(Math.floor(perState)) : perState.toFixed(6);
+								return `Swap STATE for ${tokenName} • 1 STATE ≈ ${quote} ${tokenName}`;
+							}
+							// Stable generic fallback
+							return 'Use DEX to swap STATE for TOKEN';
+						})();
 
 							return (
 							<div className="auction-boxes">
@@ -884,35 +872,18 @@ useEffect(() => {
 										doneAirdrop={(() => {
 											const idKey = selected?.id || todayTokenSymbol || '';
 											const addrKey = (TOKENS?.[selected?.id]?.address) || selected?.address || todayTokenAddress || '';
-											const claimedOnce = resolveFlag(AirdropClaimed, idKey, addrKey);
-											// Use distributor claimable amount: if amount > 0, user can claim again; otherwise show ✅ when already claimed
-											const claimableAmount = Number(airdropAmount || 0);
-											return claimedOnce && !(claimableAmount > 0);
+											return resolveFlag(AirdropClaimed, idKey, addrKey);
 										})()}
-										doneRatioSwap={(() => {
+											doneRatioSwap={(() => {
+												const idKey = selected?.id || todayTokenSymbol || '';
+												const addrKey = (TOKENS?.[selected?.id]?.address) || selected?.address || todayTokenAddress || '';
+												return resolveFlag(userHasBurned, idKey, addrKey);
+											})()}
+										doneDexSwap={(() => {
 											const idKey = selected?.id || todayTokenSymbol || '';
 											const addrKey = (TOKENS?.[selected?.id]?.address) || selected?.address || todayTokenAddress || '';
-											const burnedOnce = resolveFlag(userHasBurned, idKey, addrKey);
-											// Show check only if burned and no additional DAV units are currently available to burn
-											return burnedOnce && !(Number(availableUnitsForToken) > 0);
+											return resolveFlag(userHashSwapped, idKey, addrKey);
 										})()}
-									doneDexSwap={(() => {
-										const idKey = selected?.id || todayTokenSymbol || '';
-										const addrKey = (TOKENS?.[selected?.id]?.address) || selected?.address || todayTokenAddress || '';
-										const swappedOnce = resolveFlag(userHashSwapped, idKey, addrKey);
-										// Determine pending STATE from OutPutAmount (userStateBalance)
-										let pending = 0;
-										try {
-											const byName = OutPutAmount?.[idKey];
-											const byAddr = OutPutAmount?.[addrKey] ?? OutPutAmount?.[addrKey?.toLowerCase?.()] ?? OutPutAmount?.[addrKey?.toUpperCase?.()];
-											const v = byAddr !== undefined ? byAddr : byName;
-											pending = Number(v || 0);
-											if (!Number.isFinite(pending)) pending = 0;
-										} catch { pending = 0; }
-										// Show checkmark only if user swapped before, has no pending STATE left to swap,
-										// and there are no available DAV units for this token right now (so a new round can't start yet)
-										return swappedOnce && !(pending > 0) && !(Number(availableUnitsForToken) > 0);
-									})()}
 									/>
 								)}
 								{noTokens && null}

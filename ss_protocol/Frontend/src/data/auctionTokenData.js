@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { generateIdenticon } from "../utils/identicon";
 import { isImageUrl } from "../Constants/Constants";
 import { useSwapContract } from "../Functions/SwapContractFunctions";
@@ -25,62 +25,76 @@ export const useAuctionTokens = () => {
 	const [cachedTokens, setCachedTokens] = useState([]); // store last known good state
 	const prevSnapshotRef = useRef(null); // for shallow compare
 
-	// Create name-to-emoji mapping
-	const nameToEmoji =
-		Array.isArray(names) && Array.isArray(Emojies) && names.length === Emojies.length
-			? names.reduce((acc, name, index) => {
-				acc[name.toLowerCase()] = Emojies[index] || "🔹";
-				return acc;
-			}, {})
-			: {};
+	// OPTIMIZED: Memoize name-to-emoji mapping
+	const nameToEmoji = useMemo(() => {
+		if (!Array.isArray(names) || !Array.isArray(Emojies) || names.length !== Emojies.length) {
+			return {};
+		}
+		return names.reduce((acc, name, index) => {
+			acc[name.toLowerCase()] = Emojies[index] || "🔹";
+			return acc;
+		}, {});
+	}, [names, Emojies]);
 
-	const dynamicTokenNames = Array.from(TokenNames || []).filter(
-		(name) => name !== "DAV" && name !== "STATE"
-	);
+	// OPTIMIZED: Memoize filtered token names
+	const dynamicTokenNames = useMemo(() => {
+		return Array.from(TokenNames || []).filter(
+			(name) => name !== "DAV" && name !== "STATE"
+		);
+	}, [TokenNames]);
 
-	const handleAddMap = {
-		second: () => { }, // Replace with actual handler if exists
-	};
+	// OPTIMIZED: Stable SwapTokens wrapper via useCallback
+	const swapTokensWrapper = useCallback((id, contract) => {
+		return SwapTokens(id, contract);
+	}, [SwapTokens]);
 
-	const newTokenConfigs = dynamicTokenNames.map((contract) => {
-		const id = contract;
-		const handleAddToken = handleAddMap[contract] || (() => { });
-		const address =
-			tokenMap?.[contract] || "0x0000000000000000000000000000000000000000";
-		const mappedEmoji = nameToEmoji[contract.toLowerCase()];
-		// Prefer on-chain/ipfs image if available, else identicon for the address
-		const emoji = isImageUrl(mappedEmoji) ? mappedEmoji : generateIdenticon(address);
+	// OPTIMIZED: Memoize newTokenConfigs to prevent recreation on every render
+	const newTokenConfigs = useMemo(() => {
+		return dynamicTokenNames.map((contract) => {
+			const id = contract;
+			const address =
+				tokenMap?.[contract] || "0x0000000000000000000000000000000000000000";
+			const mappedEmoji = nameToEmoji[contract.toLowerCase()];
+			// Prefer on-chain/ipfs image if available, else identicon for the address
+			const emoji = isImageUrl(mappedEmoji) ? mappedEmoji : generateIdenticon(address);
 
-		return {
-			id,
-			name: id,
-			emoji,
-			ContractName: contract,
-			token: address,
-			handleAddToken,
-			ratio: `1:${RatioTargetsofTokens?.[contract] || 0}`,
-			currentRatio: `1:1000`,
-			TimeLeft: AuctionTime?.[contract],
-			AirdropClaimedForToken: AirdropClaimed?.[contract],
-			isReversing: isReversed?.[contract],
-			RatioTargetToken: RatioTargetsofTokens?.[contract] || 0,
-			address,
-			AuctionStatus: IsAuctionActive?.[contract],
-			userHasSwapped: userHashSwapped?.[contract],
-			userHasReverse: userHasReverseSwapped?.[contract],
-			SwapT: () => SwapTokens(id, contract),
-			onlyInputAmount: InputAmount[contract],
-			onlyState: OutPutAmount?.[contract] || 0,
-			inputTokenAmount: `${InputAmount[contract] || 0} ${id}`,
-			outputToken: `${OutPutAmount?.[contract] || 0} STATE`,
-		};
-	});
+			return {
+				id,
+				name: id,
+				emoji,
+				ContractName: contract,
+				token: address,
+				handleAddToken: () => {},
+				ratio: `1:${RatioTargetsofTokens?.[contract] || 0}`,
+				currentRatio: `1:1000`,
+				TimeLeft: AuctionTime?.[contract],
+				AirdropClaimedForToken: AirdropClaimed?.[contract],
+				isReversing: isReversed?.[contract],
+				RatioTargetToken: RatioTargetsofTokens?.[contract] || 0,
+				address,
+				AuctionStatus: IsAuctionActive?.[contract],
+				userHasSwapped: userHashSwapped?.[contract],
+				userHasReverse: userHasReverseSwapped?.[contract],
+				SwapT: () => swapTokensWrapper(id, contract),
+				onlyInputAmount: InputAmount[contract],
+				onlyState: OutPutAmount?.[contract] || 0,
+				inputTokenAmount: `${InputAmount[contract] || 0} ${id}`,
+				outputToken: `${OutPutAmount?.[contract] || 0} STATE`,
+			};
+		});
+	}, [dynamicTokenNames, tokenMap, nameToEmoji, RatioTargetsofTokens, AuctionTime, AirdropClaimed, isReversed, IsAuctionActive, userHashSwapped, userHasReverseSwapped, InputAmount, OutPutAmount, swapTokensWrapper]);
 
-	// Compare snapshots to update only if something actually changed
+	// OPTIMIZED: Debounced cache update - only update if meaningful change detected
+	const lastUpdateRef = useRef(0);
 	useEffect(() => {
+		// Debounce: don't update more than once per second
+		const now = Date.now();
+		if (now - lastUpdateRef.current < 1000) return;
+		
 		const snapshot = JSON.stringify(newTokenConfigs);
 		if (prevSnapshotRef.current !== snapshot) {
 			prevSnapshotRef.current = snapshot;
+			lastUpdateRef.current = now;
 			setCachedTokens(newTokenConfigs);
 		}
 	}, [newTokenConfigs]);

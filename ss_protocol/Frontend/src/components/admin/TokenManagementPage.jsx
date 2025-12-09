@@ -65,60 +65,64 @@ export default function TokenManagementPage() {
     if (!AuctionContract) return;
     try {
       const count = Number(await AuctionContract.tokenCount?.().catch(() => 0));
-      const list = [];
-      
-      // Fetch all burned LP amounts once
-      const burnedLPMap = {};
-      try {
-        for (let i = 0; i < count; i++) {
-          const tokenAddr = await AuctionContract.autoRegisteredTokens(i).catch(() => null);
-          if (tokenAddr && tokenAddr !== ethers.ZeroAddress) {
-            try {
-              const pair = await AuctionContract.getPairAddress(tokenAddr).catch(() => ethers.ZeroAddress);
-              if (pair && pair !== ethers.ZeroAddress) {
-                // Get LP token balance at burn address (0xdead or similar)
-                const ERC20_ABI = ["function balanceOf(address) view returns (uint256)", "function decimals() view returns (uint8)"];
-                const runner = AuctionContract?.runner || undefined;
-                const lpContract = new ethers.Contract(pair, ERC20_ABI, runner);
-                const burnAddress = "0x000000000000000000000000000000000000dEaD";
-                
-                let balanceRaw = 0n;
-                let decimals = 18;
-                try { balanceRaw = await lpContract.balanceOf(burnAddress); } catch {}
-                try { decimals = await lpContract.decimals(); } catch {}
-                
-                const formatted = Number(ethers.formatUnits(balanceRaw, decimals));
-                const numericBalance = Math.floor(Number.isFinite(formatted) ? formatted : 0);
-                burnedLPMap[tokenAddr.toLowerCase()] = numericBalance;
-              }
-            } catch {}
-          }
-        }
-      } catch {}
-      
-      for (let i = 0; i < count; i++) {
-        try {
-          const token = await AuctionContract.autoRegisteredTokens(i);
-          const pair = await AuctionContract.getPairAddress(token).catch(() => ethers.ZeroAddress);
-          // Fetch token metadata (name/symbol) for display
-          let name = null, symbol = null;
-          try {
-            const ERC20_META_ABI = [
-              "function name() view returns (string)",
-              "function symbol() view returns (string)"
-            ];
-            const runner = AuctionContract?.runner || undefined;
-            const erc = new ethers.Contract(token, ERC20_META_ABI, runner);
-            try { name = await erc.name(); } catch {}
-            try { symbol = await erc.symbol(); } catch {}
-          } catch {}
-          
-          // Get burned LP from map
-          const burnedLp = burnedLPMap[token.toLowerCase()] || 0;
-          
-          list.push({ token, pair, name, symbol, burnedLp });
-        } catch {}
+      if (count === 0) {
+        setTokens([]);
+        return;
       }
+      
+      const runner = AuctionContract?.runner || undefined;
+      const ERC20_ABI = [
+        "function balanceOf(address) view returns (uint256)", 
+        "function decimals() view returns (uint8)",
+        "function name() view returns (string)",
+        "function symbol() view returns (string)"
+      ];
+      const burnAddress = "0x000000000000000000000000000000000000dEaD";
+      
+      // Step 1: Fetch all token addresses in PARALLEL
+      const addressPromises = [];
+      for (let i = 0; i < count; i++) {
+        addressPromises.push(AuctionContract.autoRegisteredTokens(i).catch(() => null));
+      }
+      const addresses = await Promise.all(addressPromises);
+      const validAddresses = addresses.filter(addr => addr && addr !== ethers.ZeroAddress);
+      
+      // Step 2: Fetch all token data in PARALLEL (pair, name, symbol, burnedLp)
+      const tokenDataPromises = validAddresses.map(async (tokenAddr) => {
+        try {
+          // Get pair address
+          const pair = await AuctionContract.getPairAddress(tokenAddr).catch(() => ethers.ZeroAddress);
+          
+          // Create token contract for metadata
+          const tokenContract = new ethers.Contract(tokenAddr, ERC20_ABI, runner);
+          
+          // Fetch name, symbol, and burned LP in parallel
+          const [name, symbol, burnedLpData] = await Promise.all([
+            tokenContract.name().catch(() => null),
+            tokenContract.symbol().catch(() => null),
+            (async () => {
+              if (!pair || pair === ethers.ZeroAddress) return 0;
+              try {
+                const lpContract = new ethers.Contract(pair, ERC20_ABI, runner);
+                const [balanceRaw, decimals] = await Promise.all([
+                  lpContract.balanceOf(burnAddress).catch(() => 0n),
+                  lpContract.decimals().catch(() => 18)
+                ]);
+                const formatted = Number(ethers.formatUnits(balanceRaw, decimals));
+                return Math.floor(Number.isFinite(formatted) ? formatted : 0);
+              } catch {
+                return 0;
+              }
+            })()
+          ]);
+          
+          return { token: tokenAddr, pair, name, symbol, burnedLp: burnedLpData };
+        } catch {
+          return { token: tokenAddr, pair: ethers.ZeroAddress, name: null, symbol: null, burnedLp: 0 };
+        }
+      });
+      
+      const list = await Promise.all(tokenDataPromises);
       setTokens(list);
     } catch (e) {
       console.warn("Failed to load tokens", e);

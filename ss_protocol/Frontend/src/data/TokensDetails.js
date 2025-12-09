@@ -42,51 +42,54 @@ export const TokensDetails = () => {
       if (!AllContracts?.AuctionContract) return;
       try {
         const count = Number(await AllContracts.AuctionContract.tokenCount?.().catch(() => 0));
-        const list = [];
+        if (count === 0) {
+          setDeployedTokens([]);
+          return;
+        }
         
+        // Batch fetch all token addresses first
+        const addressPromises = [];
         for (let i = 0; i < count; i++) {
+          addressPromises.push(
+            AllContracts.AuctionContract.autoRegisteredTokens(i).catch(() => null)
+          );
+        }
+        const addresses = await Promise.all(addressPromises);
+        
+        // Filter valid addresses and batch fetch details
+        const validAddresses = addresses.filter(addr => addr && addr !== ethers.ZeroAddress);
+        
+        const detailPromises = validAddresses.map(async (tokenAddress) => {
           try {
-            const tokenAddress = await AllContracts.AuctionContract.autoRegisteredTokens(i);
+            const tokenContract = new ethers.Contract(tokenAddress, [
+              'function name() view returns (string)',
+              'function symbol() view returns (string)'
+            ], AllContracts.AuctionContract.runner || AllContracts.AuctionContract.provider);
             
-            // Skip if invalid address
-            if (!tokenAddress || tokenAddress === ethers.ZeroAddress) continue;
+            const [tokenName, tokenSymbol, pairAddress] = await Promise.all([
+              tokenContract.name().catch(() => 'Unknown'),
+              tokenContract.symbol().catch(() => 'TKN'),
+              AllContracts.AuctionContract.getPairAddress(tokenAddress).catch(() => ethers.ZeroAddress)
+            ]);
             
-            // Get pair address - this might be null after buy & burn pool creation
-            const pairAddress = await AllContracts.AuctionContract.getPairAddress(tokenAddress).catch(() => ethers.ZeroAddress);
-            
-            // Fetch token details even if pair doesn't exist yet
-            let tokenName = `Token ${i + 1}`;
-            let tokenSymbol = "TKN";
-            try {
-              const tokenContract = new ethers.Contract(tokenAddress, [
-                'function name() view returns (string)',
-                'function symbol() view returns (string)',
-                'function decimals() view returns (uint8)'
-              ], AllContracts.AuctionContract.runner || AllContracts.AuctionContract.provider);
-              
-              [tokenName, tokenSymbol] = await Promise.all([
-                tokenContract.name(),
-                tokenContract.symbol()
-              ]);
-            } catch (e) {
-              console.warn(`Failed to fetch token details for ${tokenAddress}:`, e);
-            }
-            
-            // Add token to list even if pair is not created
-            list.push({
+            return {
               address: tokenAddress,
               name: tokenName,
               symbol: tokenSymbol,
               pairAddress: pairAddress || ethers.ZeroAddress,
               hasPair: pairAddress && pairAddress !== ethers.ZeroAddress
-            });
+            };
           } catch (err) {
-            console.warn(`Error fetching token at index ${i}:`, err);
+            console.warn(`Error fetching token details for ${tokenAddress}:`, err);
+            return null;
           }
-        }
+        });
+        
+        const results = await Promise.all(detailPromises);
+        const list = results.filter(Boolean);
         
         setDeployedTokens(list);
-        console.log(`✅ Fetched ${list.length} deployed tokens from contract:`, list.map(t => t.name));
+        console.log(`✅ Fetched ${list.length} deployed tokens from contract`);
       } catch (err) {
         console.error("Error fetching deployed tokens:", err);
       }
@@ -94,8 +97,8 @@ export const TokensDetails = () => {
 
     fetchDeployed();
     
-    // Refresh on certain events
-    const interval = setInterval(fetchDeployed, 30000); // Refresh every 30 seconds
+    // Refresh less frequently - every 60 seconds instead of 30
+    const interval = setInterval(fetchDeployed, 60000);
     return () => clearInterval(interval);
   }, [AllContracts?.AuctionContract]);
 
@@ -168,6 +171,13 @@ export const TokensDetails = () => {
         ? 'Not Started'
         : (Number.isFinite(Number(rawCycleDeployed)) ? Number(rawCycleDeployed) : 0);
 
+      // Robust renounced lookup: try name, symbol, fullName, and address
+      const renouncedByName = swap.isTokenRenounce?.[token.name];
+      const renouncedBySymbol = swap.isTokenRenounce?.[token.symbol];
+      const renouncedByFullName = swap.isTokenRenounce?.[token.fullName];
+      const renouncedByAddr = swap.isTokenRenounce?.[(token.address || '').toLowerCase()];
+      const isRenouncedValue = renouncedByName ?? renouncedBySymbol ?? renouncedByFullName ?? renouncedByAddr ?? false;
+
       return {
         tokenName: token.name, // symbol or ERC20 name()
         key: shortenAddress(token.address),
@@ -176,7 +186,7 @@ export const TokensDetails = () => {
         Price: token.price || 0,
         ratio: swap.TokenRatio?.[token.name] || '0',
         emoji,
-        isRenounced: swap.isTokenRenounce?.[token.name] || false,
+        isRenounced: isRenouncedValue,
         DavVault: vaultBalance,
         BurnedLp: burnedLpNum,
         burned: swap.burnedAmount?.[token.name] || '0',
@@ -200,18 +210,30 @@ export const TokensDetails = () => {
       ? 'Not Started'
       : (Number.isFinite(Number(rawCycle)) ? Number(rawCycle) : 0);
 
+    // Robust vault balance lookup: try key, name, and address
+    const vaultByKey = swap.TokenBalance?.[key];
+    const vaultByName = swap.TokenBalance?.[token.name];
+    const vaultByAddr = swap.TokenBalance?.[(token.address || '').toLowerCase()];
+    const vaultBalance = vaultByKey ?? vaultByName ?? vaultByAddr ?? 0;
+
+    // Robust renounced lookup: try key, name, and address
+    const renouncedByKey = swap.isTokenRenounce?.[key];
+    const renouncedByName = swap.isTokenRenounce?.[token.name];
+    const renouncedByAddr = swap.isTokenRenounce?.[(token.address || '').toLowerCase()];
+    const isRenouncedValue = renouncedByKey ?? renouncedByName ?? renouncedByAddr ?? false;
+
     return {
       tokenName: token.name,
       key: shortenAddress(token.address),
       name: token.displayName || token.name,
       displayName: nameMap[(token.address || '').toLowerCase()] || token.displayName || token.name,
       Price: token.price,
-      ratio: swap.TokenRatio?.[key],
+      ratio: swap.TokenRatio?.[key] ?? swap.TokenRatio?.[token.name],
       emoji,
-      isRenounced: swap.isTokenRenounce?.[token.name],
-      DavVault: swap.TokenBalance?.[key],
+      isRenounced: isRenouncedValue,
+      DavVault: vaultBalance,
       BurnedLp: burnedLpNum,
-      burned: swap.burnedAmount?.[key],
+      burned: swap.burnedAmount?.[key] ?? swap.burnedAmount?.[token.name],
       isSupported: token.name === 'DAV' ? 'true' : (token.name === 'STATE' ? 'true' : swap.supportedToken?.[key]),
       TokenAddress: token.address,
       PairAddress: swap.TokenPariAddress?.[key] || '0x0000000000000000000000000000000000000000',

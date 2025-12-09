@@ -35,7 +35,7 @@ export function useStatePoolAddress() {
       }
     };
     fetch();
-    const id = setInterval(fetch, 30000);
+    const id = setInterval(fetch, 120000); // 2 minutes - reduced from 30s to prevent memory issues
     return () => { cancelled = true; clearInterval(id); };
   }, [BuyAndBurnController]);
 

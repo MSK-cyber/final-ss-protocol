@@ -6,6 +6,7 @@ import {
   useEffect,
   useRef,
   useCallback,
+  useMemo,
 } from "react";
 import { ethers } from "ethers";
 import PropTypes from "prop-types";
@@ -195,6 +196,158 @@ export const SwapContractProvider = ({ children }) => {
   // Ref to call the same full data refresh used on wallet connect/disconnect
   const runSyncRef = useRef(null);
 
+  // ============ PERSISTENT CACHE SYSTEM ============
+  // Cache all swap data to localStorage to prevent memory issues on page load
+  const SWAP_CACHE_KEY = 'swap_data_cache';
+  const SWAP_CACHE_TTL = 5 * 60 * 1000; // 5 minutes - after this, fetch fresh data
+  const dataLoadedRef = useRef(false); // Track if we've loaded from cache
+
+  // Save all current state to cache
+  const saveToCache = useCallback(() => {
+    try {
+      const cacheData = {
+        timestamp: Date.now(),
+        chainId,
+        TokenRatio,
+        CurrentCycleCount,
+        TokenBalance,
+        burnedAmount,
+        burnedLPAmount,
+        TokenPariAddress,
+        tokenMap,
+        TokenNames,
+        supportedToken,
+        isTokenRenounce,
+        IsAuctionActive,
+        isReversed,
+        pstateToPlsRatio,
+        // NOTE: We intentionally do NOT cache per-user completion flags
+        // (AirdropClaimed, userHasBurned, etc.) because they must always
+        // be fetched fresh from the chain to avoid stale tick marks.
+      };
+      localStorage.setItem(SWAP_CACHE_KEY, JSON.stringify(cacheData));
+      console.log('💾 Saved swap data to cache');
+    } catch (e) {
+      console.warn('Failed to save swap cache:', e);
+    }
+  }, [chainId, TokenRatio, CurrentCycleCount, TokenBalance, burnedAmount, burnedLPAmount, TokenPariAddress, tokenMap, TokenNames, supportedToken, isTokenRenounce, IsAuctionActive, isReversed, pstateToPlsRatio]);
+
+  // Load cached data into state
+  const loadFromCache = useCallback(() => {
+    try {
+      const raw = localStorage.getItem(SWAP_CACHE_KEY);
+      if (!raw) return false;
+      
+      const cached = JSON.parse(raw);
+      
+      // Check if cache is for same chain
+      if (cached.chainId !== chainId) {
+        console.log('🔄 Cache is for different chain, will fetch fresh data');
+        return false;
+      }
+      
+      // Load cached values into state
+      if (cached.TokenRatio && Object.keys(cached.TokenRatio).length > 0) {
+        setTokenRatio(cached.TokenRatio);
+      }
+      if (cached.CurrentCycleCount && Object.keys(cached.CurrentCycleCount).length > 0) {
+        setCurrentCycleCount(cached.CurrentCycleCount);
+      }
+      if (cached.TokenBalance && Object.keys(cached.TokenBalance).length > 0) {
+        setTokenbalance(cached.TokenBalance);
+      }
+      if (cached.burnedAmount && Object.keys(cached.burnedAmount).length > 0) {
+        setBurnedAmount(cached.burnedAmount);
+      }
+      if (cached.burnedLPAmount && Object.keys(cached.burnedLPAmount).length > 0) {
+        setBurnLpAmount(cached.burnedLPAmount);
+      }
+      if (cached.TokenPariAddress && Object.keys(cached.TokenPariAddress).length > 0) {
+        setPairAddresses(cached.TokenPariAddress);
+      }
+      if (cached.tokenMap && Object.keys(cached.tokenMap).length > 0) {
+        setTokenMap(cached.tokenMap);
+      }
+      if (cached.TokenNames && cached.TokenNames.length > 0) {
+        setTokenNames(cached.TokenNames);
+      }
+      if (cached.supportedToken) {
+        setIsSupported(cached.supportedToken);
+      }
+      if (cached.isTokenRenounce) {
+        setRenonced(cached.isTokenRenounce);
+      }
+      if (cached.IsAuctionActive) {
+        setisAuctionActive(cached.IsAuctionActive);
+      }
+      if (cached.isReversed) {
+        setIsReverse(cached.isReversed);
+      }
+      if (cached.pstateToPlsRatio) {
+        setPstateToPlsRatio(cached.pstateToPlsRatio);
+      }
+      // NOTE: We intentionally do NOT restore per-user completion flags
+      // (AirdropClaimed, userHasBurned, userHashSwapped, etc.) from cache.
+      // These must always be fetched fresh from the chain to avoid showing
+      // stale tick marks (e.g., showing all steps done when only Step 1 is done).
+      // The live flag refresh in runStagedRefresh handles this.
+      
+      console.log('📦 Loaded swap data from cache (age:', Math.round((Date.now() - cached.timestamp) / 1000), 's)');
+      return true;
+    } catch (e) {
+      console.warn('Failed to load swap cache:', e);
+      return false;
+    }
+  }, [chainId]);
+
+  // Check if cache is still valid (not expired)
+  const isCacheValid = useCallback(() => {
+    try {
+      const raw = localStorage.getItem(SWAP_CACHE_KEY);
+      if (!raw) return false;
+      const cached = JSON.parse(raw);
+      if (cached.chainId !== chainId) return false;
+      return (Date.now() - cached.timestamp) < SWAP_CACHE_TTL;
+    } catch {
+      return false;
+    }
+  }, [chainId]);
+
+  // Load from cache on mount (only once)
+  useEffect(() => {
+    if (!dataLoadedRef.current) {
+      dataLoadedRef.current = true;
+      const loaded = loadFromCache();
+      if (loaded) {
+        console.log('✅ Using cached data - page loaded instantly');
+      }
+    }
+  }, [loadFromCache]);
+
+  // Save to cache whenever data changes (debounced)
+  const saveCacheTimeoutRef = useRef(null);
+  useEffect(() => {
+    // Only save if we have meaningful data
+    if (Object.keys(TokenRatio).length === 0 && Object.keys(tokenMap).length === 0) {
+      return;
+    }
+    
+    // Debounce saves to prevent too many writes
+    if (saveCacheTimeoutRef.current) {
+      clearTimeout(saveCacheTimeoutRef.current);
+    }
+    saveCacheTimeoutRef.current = setTimeout(() => {
+      saveToCache();
+    }, 2000); // Save 2 seconds after last change
+    
+    return () => {
+      if (saveCacheTimeoutRef.current) {
+        clearTimeout(saveCacheTimeoutRef.current);
+      }
+    };
+  }, [TokenRatio, CurrentCycleCount, TokenBalance, burnedAmount, burnedLPAmount, tokenMap, saveToCache]);
+  // ============ END CACHE SYSTEM ============
+
   // Persist last active auction end across reloads (keyed by swap address)
   const getSwapAddressSafe = useCallback(() => {
     try {
@@ -247,6 +400,10 @@ export const SwapContractProvider = ({ children }) => {
     }
   };
 
+  // Cache for token addresses to prevent repeated RPC calls
+  const tokenAddressCacheRef = useRef({ data: null, timestamp: 0 });
+  const TOKEN_CACHE_TTL = 60000; // 60 seconds cache
+
   // Fix the fetchUserTokenAddresses function to handle tokens properly after buy & burn pool creation
   const ReturnfetchUserTokenAddresses = async () => {
     // Only require AuctionContract; SwapLens fallback removed because ABI doesn't expose getUserTokenData
@@ -255,42 +412,65 @@ export const SwapContractProvider = ({ children }) => {
       return {};
     }
 
+    // Check cache first to prevent repeated RPC calls
+    const now = Date.now();
+    const cache = tokenAddressCacheRef.current;
+    if (cache.data && (now - cache.timestamp) < TOKEN_CACHE_TTL) {
+      return cache.data;
+    }
+
     try {
       // Get registered tokens from the auction contract
       const tokenCount = await AllContracts.AuctionContract.tokenCount?.().catch(() => 0);
       const tokenMap = {};
 
+      // Batch fetch all token addresses first (faster than sequential)
+      const addressPromises = [];
       for (let i = 0; i < tokenCount; i++) {
+        addressPromises.push(
+          AllContracts.AuctionContract.autoRegisteredTokens(i).catch(() => null)
+        );
+      }
+      const addresses = await Promise.all(addressPromises);
+
+      // Filter valid addresses and batch fetch names AND symbols
+      const validAddresses = addresses.filter(addr => addr && addr !== ethers.ZeroAddress);
+      
+      // Batch fetch all names and symbols in parallel
+      const detailPromises = validAddresses.map(async (tokenAddress, idx) => {
         try {
-          const tokenAddress = await AllContracts.AuctionContract.autoRegisteredTokens(i);
-          if (tokenAddress && tokenAddress !== ethers.ZeroAddress) {
-            // Query token name/symbol directly on-chain using the contract's runner (provider or signer)
-            const tokenContract = new ethers.Contract(
-              tokenAddress,
-              [
-                'function name() view returns (string)',
-                'function symbol() view returns (string)'
-              ],
-              AllContracts.AuctionContract.runner || provider
-            );
-
-            const [name] = await Promise.all([
-              tokenContract.name().catch(() => `Token${i}`),
-              // symbol not used for keying currently, but keeps call for parity if needed later
-              tokenContract.symbol().catch(() => 'TKN')
-            ]);
-
-            tokenMap[name] = tokenAddress;
-          }
-        } catch (err) {
-          console.warn(`Failed to fetch token at index ${i}:`, err);
+          const tokenContract = new ethers.Contract(
+            tokenAddress,
+            ['function name() view returns (string)', 'function symbol() view returns (string)'],
+            httpProvider // Use the memoized provider
+          );
+          const [name, symbol] = await Promise.all([
+            tokenContract.name().catch(() => `Token${idx}`),
+            tokenContract.symbol().catch(() => "")
+          ]);
+          return { name, symbol, address: tokenAddress };
+        } catch {
+          return { name: `Token${idx}`, symbol: "", address: tokenAddress };
+        }
+      });
+      
+      const detailResults = await Promise.all(detailPromises);
+      for (const { name, symbol, address } of detailResults) {
+        // Key by name (ERC20 name) - this is the primary key
+        tokenMap[name] = address;
+        // Also key by symbol if different from name (for tokens where symbol is used in UI)
+        if (symbol && symbol !== name) {
+          tokenMap[symbol] = address;
         }
       }
 
+      // Cache the result
+      tokenAddressCacheRef.current = { data: tokenMap, timestamp: Date.now() };
+      
       return tokenMap;
     } catch (error) {
       console.error("Error in ReturnfetchUserTokenAddresses:", error);
-      return {};
+      return tokenAddressCacheRef.current.data || {};
     }
   };
 
@@ -398,6 +578,152 @@ export const SwapContractProvider = ({ children }) => {
     }
   };
 
+  // ========== FAST BATCH COMPLETION FLAG FETCHER ==========
+  // Fetches ALL completion flags AND available DAV units for ALL tokens in a single highly parallelized operation
+  // This is MUCH faster than calling 6+ separate functions sequentially
+  const fetchAllCompletionFlagsFast = async () => {
+    try {
+      if (!AllContracts?.AuctionContract || !address) {
+        console.debug('fetchAllCompletionFlagsFast: contract or address not ready');
+        return;
+      }
+
+      // Get token map first (uses cache if available)
+      const tokenMap = await ReturnfetchUserTokenAddresses();
+      const entries = Object.entries(tokenMap);
+      if (entries.length === 0) return;
+
+      const contract = AllContracts.AuctionContract;
+      
+      // Build ALL flag calls for ALL tokens in one array
+      const allCalls = [];
+      for (const [tokenName, tokenAddress] of entries) {
+        if (!tokenAddress) continue;
+        const addrLc = tokenAddress.toLowerCase();
+        
+        // Add all 6 flag types for this token
+        allCalls.push({
+          type: 'airdropClaimed',
+          tokenName,
+          tokenAddress,
+          addrLc,
+          promise: contract.hasCompletedStep1(address, tokenAddress).catch(() => false)
+        });
+        allCalls.push({
+          type: 'hasBurned',
+          tokenName,
+          tokenAddress,
+          addrLc,
+          promise: contract.hasUserBurnedForToken(address, tokenAddress).catch(() => false)
+        });
+        allCalls.push({
+          type: 'hasSwapped',
+          tokenName,
+          tokenAddress,
+          addrLc,
+          promise: contract.getUserHasSwapped(address, tokenAddress).catch(() => false)
+        });
+        allCalls.push({
+          type: 'hasReverseSwapped',
+          tokenName,
+          tokenAddress,
+          addrLc,
+          promise: contract.getUserHasReverseSwapped(address, tokenAddress).catch(() => false)
+        });
+        allCalls.push({
+          type: 'reverseStep1',
+          tokenName,
+          tokenAddress,
+          addrLc,
+          promise: contract.hasUserCompletedReverseStep1(address, tokenAddress).catch(() => false)
+        });
+        allCalls.push({
+          type: 'reverseStep2',
+          tokenName,
+          tokenAddress,
+          addrLc,
+          promise: contract.hasUserCompletedReverseStep2(address, tokenAddress).catch(() => false)
+        });
+        // Also fetch available DAV units (InputAmount) for subtitle display
+        allCalls.push({
+          type: 'availableDav',
+          tokenName,
+          tokenAddress,
+          addrLc,
+          promise: contract.getAvailableDavForAuction(address, tokenAddress).catch(() => 0n)
+        });
+      }
+
+      // Execute ALL calls in parallel (much faster than sequential)
+      const results = await Promise.allSettled(allCalls.map(c => c.promise));
+      
+      // Process results into state objects
+      const airdropClaimedResults = {};
+      const hasBurnedResults = {};
+      const hasSwappedResults = {};
+      const hasReverseSwappedResults = {};
+      const reverseStep1Results = {};
+      const reverseStep2Results = {};
+      const inputAmountResults = {};
+
+      for (let i = 0; i < allCalls.length; i++) {
+        const call = allCalls[i];
+        const result = results[i];
+        const value = result.status === 'fulfilled' ? result.value : (call.type === 'availableDav' ? 0n : false);
+
+        // Key by both original and lowercase address for reliable lookups
+        switch (call.type) {
+          case 'airdropClaimed':
+            const airdropVal = value.toString();
+            airdropClaimedResults[call.tokenAddress] = airdropVal;
+            airdropClaimedResults[call.addrLc] = airdropVal;
+            break;
+          case 'hasBurned':
+            hasBurnedResults[call.tokenAddress] = Boolean(value);
+            hasBurnedResults[call.addrLc] = Boolean(value);
+            break;
+          case 'hasSwapped':
+            const swappedVal = value.toString();
+            hasSwappedResults[call.tokenAddress] = swappedVal;
+            hasSwappedResults[call.addrLc] = swappedVal;
+            break;
+          case 'hasReverseSwapped':
+            const revSwappedVal = value.toString();
+            hasReverseSwappedResults[call.tokenAddress] = revSwappedVal;
+            hasReverseSwappedResults[call.addrLc] = revSwappedVal;
+            break;
+          case 'reverseStep1':
+            reverseStep1Results[call.tokenAddress] = Boolean(value);
+            reverseStep1Results[call.addrLc] = Boolean(value);
+            break;
+          case 'reverseStep2':
+            reverseStep2Results[call.tokenAddress] = Boolean(value);
+            reverseStep2Results[call.addrLc] = Boolean(value);
+            break;
+          case 'availableDav':
+            const davUnits = Math.floor(Number(ethers.formatEther(value || 0n)));
+            inputAmountResults[call.tokenName] = davUnits;
+            inputAmountResults[call.tokenAddress] = davUnits;
+            inputAmountResults[call.addrLc] = davUnits;
+            break;
+        }
+      }
+
+      // Update all states at once
+      setAirdropClaimed(airdropClaimedResults);
+      setUserHasBurned(hasBurnedResults);
+      setUserHashSwapped(hasSwappedResults);
+      setUserHasReverseSwapped(hasReverseSwappedResults);
+      setUserReverseStep1(reverseStep1Results);
+      setUserReverseStep2(reverseStep2Results);
+      setInputAmount(inputAmountResults);
+
+      console.log('⚡ All completion flags + DAV units loaded in parallel batch');
+    } catch (err) {
+      console.error('fetchAllCompletionFlagsFast error:', err);
+    }
+  };
+
   const getInputAmount = async () => {
     await fetchTokenData({
       contractMethod: "getAvailableDavForAuction",
@@ -451,7 +777,8 @@ export const SwapContractProvider = ({ children }) => {
   };
 
   const HTTP_RPC_URL = "https://rpc.pulsechain.com"; // Use reliable RPC
-  const httpProvider = new ethers.JsonRpcProvider(HTTP_RPC_URL);
+  // Memoize the HTTP provider to prevent re-creation on every render
+  const httpProvider = useMemo(() => new ethers.JsonRpcProvider(HTTP_RPC_URL), []);
 
   // Developer override: allow forcing direct contract calls even if simulation fails
   const allowDirectContractCalls = () => {
@@ -857,12 +1184,11 @@ export const SwapContractProvider = ({ children }) => {
 
       resyncInterval = setInterval(() => {
         if (isActive) {
-          console.log("⏰ Scheduled resync - fetching fresh auction times...");
           fetchAuctionTimes(false);
         }
-      }, 10000); // 10s resync for fresher state
+      }, 60000); // 60s resync - reduced from 10s to prevent memory issues
 
-      console.log("🔄 Resync interval set to 10 seconds");
+      console.log("🔄 Resync interval set to 60 seconds");
     };
 
     const handleVisibilityChange = () => {
@@ -1019,66 +1345,95 @@ export const SwapContractProvider = ({ children }) => {
     });
   };
 
-  const intervalHandlesRef = useRef({}); // useRef to persist across renders
+  // Single shared interval ref for all token countdowns - prevents memory leaks from multiple intervals
+  const countdownIntervalRef = useRef(null);
+  // Store initial time left and start time for each token for local countdown calculation
+  const tokenCountdownDataRef = useRef({});
 
   const initializeClaimCountdowns = useCallback(async () => {
-    const intervalHandles = intervalHandlesRef.current;
+    // Clear existing interval
+    if (countdownIntervalRef.current) {
+      clearInterval(countdownIntervalRef.current);
+      countdownIntervalRef.current = null;
+    }
+    tokenCountdownDataRef.current = {};
+
     const results = {};
-
-    // Clear existing intervals
-    Object.values(intervalHandles).forEach(clearInterval);
-    intervalHandlesRef.current = {};
-
     const tokenMap = await ReturnfetchUserTokenAddresses();
 
-    for (const [tokenName, TokenAddress] of Object.entries(tokenMap)) {
-      try {
-        // Get current block timestamp
-        const currentBlock = await provider.getBlock('latest');
-        const currentBlockTime = currentBlock.timestamp;
+    // Get current block timestamp ONCE for all tokens
+    let currentBlockTime;
+    try {
+      const currentBlock = await provider.getBlock('latest');
+      currentBlockTime = currentBlock.timestamp;
+    } catch (e) {
+      console.warn('Failed to get block timestamp:', e);
+      currentBlockTime = Math.floor(Date.now() / 1000);
+    }
 
+    const startLocalTime = Math.floor(Date.now() / 1000);
+
+    // Fetch initial time left for all tokens in parallel
+    const entries = Object.entries(tokenMap);
+    const timeLeftPromises = entries.map(async ([tokenName, TokenAddress]) => {
+      try {
         const timeLeftInSeconds =
           await AllContracts.AuctionContract.getAuctionTimeLeft(TokenAddress);
-
-        const timeLeft = Number(timeLeftInSeconds);
-
-        // Store the end time based on blockchain timestamp
-        const endTime = currentBlockTime + timeLeft;
-        results[tokenName] = timeLeft;
-
-        // Start blockchain-synchronized countdown interval
-        intervalHandles[tokenName] = setInterval(async () => {
-          try {
-            // Get latest block timestamp
-            const latestBlock = await provider.getBlock('latest');
-            const latestBlockTime = latestBlock.timestamp;
-
-            // Calculate remaining time based on blockchain time
-            const remainingTime = Math.max(0, endTime - latestBlockTime);
-
-            setTimeLeftClaim((prev) => {
-              const updated = { ...prev };
-              updated[tokenName] = remainingTime;
-              return updated;
-            });
-          } catch (error) {
-            console.error(`Error updating claim timer for ${tokenName}:`, error);
-          }
-        }, 1000);
+        return { tokenName, timeLeft: Number(timeLeftInSeconds) };
       } catch (err) {
         console.warn(`Error getting claim time for ${tokenName}`, err);
-        results[tokenName] = 0;
+        return { tokenName, timeLeft: 0 };
       }
+    });
+
+    const timeLeftResults = await Promise.all(timeLeftPromises);
+
+    // Store initial data for each token
+    for (const { tokenName, timeLeft } of timeLeftResults) {
+      results[tokenName] = timeLeft;
+      tokenCountdownDataRef.current[tokenName] = {
+        initialTimeLeft: timeLeft,
+        startLocalTime: startLocalTime
+      };
     }
 
     setTimeLeftClaim(results);
+
+    // Single shared interval that updates ALL tokens at once
+    // This is much more efficient than having one interval per token
+    countdownIntervalRef.current = setInterval(() => {
+      const now = Math.floor(Date.now() / 1000);
+      const updates = {};
+      let hasChanges = false;
+
+      for (const [tokenName, data] of Object.entries(tokenCountdownDataRef.current)) {
+        const elapsed = now - data.startLocalTime;
+        const remainingTime = Math.max(0, data.initialTimeLeft - elapsed);
+        updates[tokenName] = remainingTime;
+      }
+
+      setTimeLeftClaim((prev) => {
+        // Check if any value actually changed to avoid unnecessary re-renders
+        for (const [key, val] of Object.entries(updates)) {
+          if (prev[key] !== val) {
+            hasChanges = true;
+            break;
+          }
+        }
+        if (!hasChanges) return prev;
+        return { ...prev, ...updates };
+      });
+    }, 1000);
   }, [AllContracts, provider]);
+
   useEffect(() => {
     initializeClaimCountdowns();
 
     return () => {
-      const intervalHandles = intervalHandlesRef.current;
-      Object.values(intervalHandles).forEach(clearInterval);
+      if (countdownIntervalRef.current) {
+        clearInterval(countdownIntervalRef.current);
+        countdownIntervalRef.current = null;
+      }
     };
   }, [initializeClaimCountdowns]);
 
@@ -1099,31 +1454,52 @@ export const SwapContractProvider = ({ children }) => {
   const getTokenBalances = async () => {
     try {
       const results = {};
+      const auctionAddr = getAuctionAddress();
+      const stateAddr = getStateAddress();
+      
+      // Validate auction address exists
+      if (!auctionAddr || auctionAddr === ethers.ZeroAddress) {
+        console.warn("getTokenBalances: Invalid auction address");
+        return;
+      }
+      
       const tokenMap = await ReturnfetchUserTokenAddresses();
+      
+      // Add STATE token with both lowercase and uppercase keys for consistency
       const extendedMap = {
         ...tokenMap,
-        state: getStateAddress(),
+        state: stateAddr,
+        STATE: stateAddr,  // Also add uppercase key
       };
 
       for (const [tokenName, TokenAddress] of Object.entries(extendedMap)) {
-        const tokenContract = new ethers.Contract(
-          TokenAddress,
-          ERC20_ABI,
-          httpProvider  // Use httpProvider instead of provider
-        );
-        const rawBalance = await tokenContract.balanceOf(getAuctionAddress());
+        try {
+          if (!TokenAddress || TokenAddress === ethers.ZeroAddress) continue;
+          
+          const tokenContract = new ethers.Contract(
+            TokenAddress,
+            ERC20_ABI,
+            httpProvider
+          );
+          const rawBalance = await tokenContract.balanceOf(auctionAddr);
 
-        // Convert to string in full units, then floor to get whole number
-        const formattedBalance = Math.floor(
-          Number(ethers.formatUnits(rawBalance, 18))
-        );
+          // Convert to string in full units, then floor to get whole number
+          const formattedBalance = Math.floor(
+            Number(ethers.formatUnits(rawBalance, 18))
+          );
 
-        results[tokenName] = formattedBalance;
+          results[tokenName] = formattedBalance;
+          // Also key by address for robust lookups
+          results[(TokenAddress || "").toLowerCase()] = formattedBalance;
+        } catch (tokenErr) {
+          console.warn(`getTokenBalances: Error fetching balance for ${tokenName}:`, tokenErr?.message);
+        }
       }
 
+      console.log("📊 Token balances fetched:", Object.keys(results).length, "entries");
       setTokenbalance(results);
     } catch (e) {
-      console.error("Error fetching input amounts:", e);
+      console.error("Error fetching token balances:", e);
     }
   };
 
@@ -1320,35 +1696,56 @@ export const SwapContractProvider = ({ children }) => {
         DAV: resolvedDav,
       };
 
-      for (const [tokenName, TokenAddress] of Object.entries(extendedMap)) {
-        // isTokenRenounced function doesn't exist in current contract
-        // Default to checking owner == zero address only
+      // Fetch all renounce statuses in parallel for better performance
+      const tokenEntries = Object.entries(extendedMap);
+      const renouncedPromises = tokenEntries.map(async ([tokenName, TokenAddress]) => {
         let renouncing = false;
+        let tokenSymbol = "";
         
-        // Check if owner is zero address (renounced)
         try {
           if (tokenName === "STATE") {
             const owner = await AllContracts.stateContract.owner();
             renouncing = owner.toLowerCase() === "0x0000000000000000000000000000000000000000";
+            tokenSymbol = "STATE";
           } else if (tokenName === "DAV") {
             const owner = await AllContracts.davContract.owner();
             renouncing = owner.toLowerCase() === "0x0000000000000000000000000000000000000000";
+            tokenSymbol = "DAV";
           } else {
-            // For other tokens, try to check owner
+            // For other tokens, try to check owner and also get symbol
             const tokenContract = new ethers.Contract(
               TokenAddress,
-              ['function owner() view returns (address)'],
-              provider
+              ['function owner() view returns (address)', 'function symbol() view returns (string)'],
+              httpProvider || provider
             );
-            const owner = await tokenContract.owner();
+            const [owner, symbol] = await Promise.all([
+              tokenContract.owner().catch(() => "0x0000000000000000000000000000000000000001"),
+              tokenContract.symbol().catch(() => "")
+            ]);
             renouncing = owner.toLowerCase() === "0x0000000000000000000000000000000000000000";
+            tokenSymbol = symbol;
           }
         } catch (err) {
-          console.warn(`Could not check renounce status for ${tokenName}:`, err);
+          console.warn(`Could not check renounce status for ${tokenName}:`, err?.shortMessage || err?.message);
           renouncing = false;
         }
 
+        return { tokenName, tokenSymbol, TokenAddress, renouncing };
+      });
+
+      const renouncedResults = await Promise.all(renouncedPromises);
+      
+      // Build results with multiple keys for robust lookups
+      for (const { tokenName, tokenSymbol, TokenAddress, renouncing } of renouncedResults) {
         results[tokenName] = renouncing;
+        // Also key by symbol for deployed tokens that might use symbol instead of name
+        if (tokenSymbol && tokenSymbol !== tokenName) {
+          results[tokenSymbol] = renouncing;
+        }
+        // Also key by address (lowercased) for address-based lookups
+        if (TokenAddress) {
+          results[(TokenAddress || "").toLowerCase()] = renouncing;
+        }
       }
 
       setRenonced(results);
@@ -1363,6 +1760,7 @@ export const SwapContractProvider = ({ children }) => {
       setState: setUserHasReverseSwapped,
       formatFn: (v) => v.toString(), // ensures consistent string output
       buildArgs: (tokenAddress) => [address, tokenAddress], // user address + token
+      useAddressAsKey: true, // Key by address for reliable lookups
     });
   };
 
@@ -1372,6 +1770,7 @@ export const SwapContractProvider = ({ children }) => {
       setState: setUserHashSwapped,
       formatFn: (v) => v.toString(), // ensures consistent string output
       buildArgs: (tokenAddress) => [address, tokenAddress], // user address + token
+      useAddressAsKey: true, // Also key by address for reliable lookups
     });
   };
 
@@ -1394,6 +1793,7 @@ export const SwapContractProvider = ({ children }) => {
       setState: setUserReverseStep1,
       formatFn: (v) => Boolean(v),
       buildArgs: (tokenAddress) => [address, tokenAddress],
+      useAddressAsKey: true, // Key by address for reliable lookups
     });
   };
   const HasUserCompletedReverseStep2 = async () => {
@@ -1402,6 +1802,7 @@ export const SwapContractProvider = ({ children }) => {
       setState: setUserReverseStep2,
       formatFn: (v) => Boolean(v),
       buildArgs: (tokenAddress) => [address, tokenAddress],
+      useAddressAsKey: true, // Key by address for reliable lookups
     });
   };
 
@@ -1411,6 +1812,7 @@ export const SwapContractProvider = ({ children }) => {
       setState: setAirdropClaimed,
       formatFn: (v) => v.toString(), // Convert boolean to string
       buildArgs: (tokenAddress) => [address, tokenAddress], // Pass user address and token address
+      useAddressAsKey: true, // Also key by address for reliable lookups
     });
   };
 
@@ -1685,65 +2087,67 @@ export const SwapContractProvider = ({ children }) => {
         "function symbol() view returns (string)",
         "function name() view returns (string)"
       ];
-  // Use the canonical burn address where LP tokens are sent
-  const targetAddress = "0x000000000000000000000000000000000000dEaD";
+      // Use the canonical burn address where LP tokens are sent
+      const targetAddress = "0x000000000000000000000000000000000000dEaD";
 
       const results = {};
 
-      // Step 2: Loop through token map and fetch pair address + balance
-      for (const [tokenName, tokenAddress] of Object.entries(tokenMap)) {
+      // Step 2: Fetch ALL pair addresses in parallel first (batch operation)
+      const tokenEntries = Object.entries(tokenMap);
+      const pairAddressPromises = tokenEntries.map(([tokenName, tokenAddress]) =>
+        AllContracts.AuctionContract.getPairAddress(tokenAddress)
+          .then(addr => ({ tokenName, tokenAddress, pairAddress: addr }))
+          .catch(() => ({ tokenName, tokenAddress, pairAddress: ethers.ZeroAddress }))
+      );
+      const pairResults = await Promise.all(pairAddressPromises);
+
+      // Step 3: Fetch balances for all valid pairs in parallel
+      const balancePromises = pairResults.map(async ({ tokenName, tokenAddress, pairAddress }) => {
         try {
-          // ✅ Fetch LP pair address for token
-          const pairAddress = await AllContracts.AuctionContract.getPairAddress(tokenAddress);
-          // Guard: ensure pairAddress is a contract
-          let pairCode = "0x";
-          try { pairCode = await (httpProvider || provider).getCode(pairAddress); } catch {}
-          if (!pairAddress || pairAddress === ethers.ZeroAddress || !pairCode || pairCode === "0x") {
-            results[tokenName] = { pairAddress: pairAddress || ethers.ZeroAddress, balance: 0 };
-            continue;
+          // Guard: ensure pairAddress is valid
+          if (!pairAddress || pairAddress === ethers.ZeroAddress) {
+            return { tokenName, tokenAddress, pairAddress: pairAddress || ethers.ZeroAddress, balance: 0, symbol: "" };
           }
 
-          // ✅ Create ERC20 contract for LP token (use httpProvider for stability)
-          const lpTokenContract = new ethers.Contract(pairAddress, ERC20_ABI, httpProvider || provider);
+          // Check if it's a contract
+          let pairCode = "0x";
+          try { pairCode = await (httpProvider || provider).getCode(pairAddress); } catch {}
+          if (!pairCode || pairCode === "0x") {
+            return { tokenName, tokenAddress, pairAddress, balance: 0, symbol: "" };
+          }
 
-          // ✅ Fetch balance & decimals in parallel
-          const [balanceRaw, decimals] = await Promise.all([
+          // Create ERC20 contract for LP token
+          const lpTokenContract = new ethers.Contract(pairAddress, ERC20_ABI, httpProvider || provider);
+          const tokenContract = new ethers.Contract(tokenAddress, TOKEN_META_ABI, httpProvider || provider);
+
+          // Fetch balance, decimals, and symbol in parallel
+          const [balanceRaw, decimals, tokenSymbol] = await Promise.all([
             lpTokenContract.balanceOf(targetAddress).catch(() => 0n),
-            lpTokenContract.decimals().catch(() => 18)
+            lpTokenContract.decimals().catch(() => 18),
+            tokenContract.symbol().catch(() => "")
           ]);
 
-          // ✅ Format balance as a number (integer LP tokens)
           const formatted = Number(ethers.formatUnits(balanceRaw || 0n, decimals || 18));
           const numericBalance = Math.floor(Number.isFinite(formatted) ? formatted : 0);
 
-          // Also fetch token symbol to key under symbol and address for robust lookups
-          let tokenSymbol = "";
-          try {
-            const tokenContract = new ethers.Contract(tokenAddress, TOKEN_META_ABI, provider);
-            tokenSymbol = await tokenContract.symbol().catch(() => "");
-          } catch {}
-
-          const entry = { pairAddress, balance: numericBalance };
-
-          // Key by tokenMap key (often name)
-          results[tokenName] = entry;
-          // Key by token symbol if available
-          if (tokenSymbol) results[tokenSymbol] = entry;
-          // Key by address (lowercased)
-          if (tokenAddress) results[(tokenAddress || "").toLowerCase()] = entry;
+          return { tokenName, tokenAddress, pairAddress, balance: numericBalance, symbol: tokenSymbol };
         } catch (err) {
-          const reason =
-            err?.reason ||
-            err?.shortMessage ||
-            err?.error?.errorName ||
-            err?.message ||
-            "";
-
-          console.warn(`LP read issue for ${tokenName}:`, reason || err);
-          // Safe fallback
-          results[tokenName] = { pairAddress: ethers.ZeroAddress, balance: 0 };
+          console.warn(`LP read issue for ${tokenName}:`, err?.shortMessage || err?.message || err);
+          return { tokenName, tokenAddress, pairAddress: ethers.ZeroAddress, balance: 0, symbol: "" };
         }
+      });
+
+      const balanceResults = await Promise.all(balancePromises);
+
+      // Step 4: Build results object from parallel fetched data
+      for (const { tokenName, tokenAddress, pairAddress, balance, symbol } of balanceResults) {
+        const entry = { pairAddress, balance };
+        results[tokenName] = entry;
+        if (symbol) results[symbol] = entry;
+        if (tokenAddress) results[(tokenAddress || "").toLowerCase()] = entry;
       }
+
+      // Step 5: Handle STATE token separately
       try {
         // Prefer Buy & Burn controller's STATE/WPLS pool for STATE token
         let statePairAddress = null;
@@ -1762,6 +2166,7 @@ export const SwapContractProvider = ({ children }) => {
           // No pool yet; set zeros and skip ERC20 calls
           const entry = { pairAddress: statePairAddress || ethers.ZeroAddress, balance: 0 };
           results["STATE"] = entry;
+          results["state"] = entry;  // Also add lowercase key
           results[(getSTATEContractAddress(chainId) || "").toLowerCase()] = entry;
         } else {
           // Guard: ensure STATE pair address has code
@@ -1770,6 +2175,7 @@ export const SwapContractProvider = ({ children }) => {
           if (!code || code === "0x") {
             const entry = { pairAddress: statePairAddress, balance: 0 };
             results["STATE"] = entry;
+            results["state"] = entry;  // Also add lowercase key
             results[(getSTATEContractAddress(chainId) || "").toLowerCase()] = entry;
           } else {
             const lpTokenContract = new ethers.Contract(statePairAddress, ERC20_ABI, httpProvider || provider);
@@ -1781,14 +2187,17 @@ export const SwapContractProvider = ({ children }) => {
             const numericBalance = Math.floor(Number.isFinite(formatted) ? formatted : 0);
             const entry = { pairAddress: statePairAddress, balance: numericBalance };
             results["STATE"] = entry;
+            results["state"] = entry;  // Also add lowercase key
             results[(getSTATEContractAddress(chainId) || "").toLowerCase()] = entry;
           }
         }
       } catch (err) {
         console.warn("STATE LP read issue:", err?.shortMessage || err?.message || err);
         results["STATE"] = { pairAddress: "error", balance: 0 };
+        results["state"] = { pairAddress: "error", balance: 0 };  // Also add lowercase key
       }
       // Step 3: Update state once after loop
+      console.log("🔥 Burned LP amounts fetched:", Object.keys(results).length, "entries");
       setBurnLpAmount(results);
       return results;
     } catch (error) {
@@ -1908,32 +2317,36 @@ export const SwapContractProvider = ({ children }) => {
       console.log('🔄 Wallet reconnected, triggering immediate synchronized data refresh');
     }
 
-    // Define all data fetch functions in proper sequence
-    // Token map MUST be fetched first so other functions can use it
-    const dataFetchFunctions = [
-      fetchUserTokenAddresses,  // PRIORITY 1: Get token map first
-      fetchTodayToken,          // PRIORITY 2: Get today's token info
+    // PRIORITY 0: Fast batch completion flag fetcher (replaces individual functions for speed)
+    // This fetches ALL 6 flag types for ALL tokens in a single parallel batch
+
+    // CRITICAL DATA - Must load first, these are needed for basic display
+    const criticalFetchFunctions = [
+      fetchUserTokenAddresses,  // Token map - essential
+      fetchTodayToken,          // Today's token info
+      getTokenRatio,            // Ratio display
+      getCurrentAuctionCycle,   // Cycle count
+      getTokenBalances,         // DAV Vault values
+    ];
+
+    // SECONDARY DATA - Can load after a delay
+    const secondaryFetchFunctions = [
+      fetchBurnLpAmount,        // Burned LP
+      getTokensBurned,          // Burned amounts
+      getPairAddresses,         // Pair addresses
+      isTokenSupporteed,        // Supported status
+    ];
+
+    // TERTIARY DATA - Least critical, load last
+    const tertiaryFetchFunctions = [
       getInputAmount,
       getOutPutAmount,
-      fetchBurnLpAmount,
-      getCurrentAuctionCycle,
-      getTokenRatio,
-      getTokensBurned,
       getAirdropAmount,
-      getPairAddresses,
       fetchDaiLastPrice,
-      getTokenBalances,
-      isAirdropClaimed,
       AddressesFromContract,
       isRenounced,
       getTokenNamesForUser,
-      isTokenSupporteed,
       getTokenNamesByUser,
-      HasSwappedAucton,
-      HasReverseSwappedAucton,
-      HasUserBurnedForToken,
-      HasUserCompletedReverseStep1,
-      HasUserCompletedReverseStep2,
       fetchPstateToPlsRatio,
     ];
 
@@ -1942,59 +2355,109 @@ export const SwapContractProvider = ({ children }) => {
       CheckIsReverse,
     ];
 
-    // Synchronized refresh: fetch token map and today's token first, then everything else
-    const runSynchronizedRefresh = async () => {
+    // Staged refresh: Load data in phases to prevent memory overload
+    const runStagedRefresh = async (forceRefresh = false) => {
+      // STAGE 0 (PRIORITY): Load ALL completion flags in a single fast parallel batch
+      // This is MUCH faster than calling 6 separate functions sequentially
+      console.log('⚡ Stage 0: Loading completion flags (fast batch)...');
       try {
-        // Step 1: Fetch token addresses AND today's token first (both critical)
-        await Promise.all([
-          fetchUserTokenAddresses(),
-          fetchTodayToken(),
-        ]);
-        
-        // Step 2: Fetch all other data in parallel
-        const results = await Promise.allSettled([
-          ...dataFetchFunctions.slice(2), // Skip first 2 since we already did them
-          ...auctionStatusFunctions,
-        ].map((fn) => fn()));
+        await fetchAllCompletionFlagsFast();
+      } catch (e) {
+        console.warn('Completion flag fast batch error:', e);
+      }
 
-        // Log any failures for debugging
-        results.forEach((result, index) => {
-          if (result.status === "rejected") {
-            const allFns = [...dataFetchFunctions.slice(2), ...auctionStatusFunctions];
-            console.debug(
-              `Data fetch function ${allFns[index]?.name || index} failed:`,
-              result.reason
-            );
+      // If cache is valid and this isn't a forced refresh, skip heavy fetching
+      // Data like TokenRatio, balances, etc. is already loaded from cache in the loadFromCache useEffect.
+      // BUT live per-user flags (step completion, claimables, auction status) must always be refreshed
+      // so that checkmarks and buttons are correct after a page reload.
+      if (!forceRefresh && isCacheValid() && Object.keys(TokenRatio).length > 0) {
+        console.log('📦 Using cached data, refreshing live flags and today token');
+
+        // Today's token can change daily, so always refresh it
+        try { await fetchTodayToken(); } catch (e) {
+          console.warn('Failed to refresh today token while using cache:', e);
+        }
+
+        // Also refresh DAV amounts and auction status for accurate subtitle display
+        const liveFlagFns = [
+          getInputAmount,
+          getOutPutAmount,
+          getAirdropAmount,
+          CheckIsAuctionActive,
+          CheckIsReverse,
+        ];
+
+        try {
+          await Promise.allSettled(liveFlagFns.map((fn) => fn()));
+        } catch (e) {
+          console.warn('Live flag refresh while using cache encountered an error:', e);
+        }
+
+        return;
+      }
+      
+      try {
+        console.log('📊 Stage 1: Loading critical data...');
+        // Stage 1: Critical data (needed for basic display)
+        await Promise.allSettled(criticalFetchFunctions.map(fn => fn()));
+        
+        // Small delay before secondary data
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        console.log('📊 Stage 2: Loading secondary data...');
+        // Stage 2: Secondary data
+        await Promise.allSettled([
+          ...secondaryFetchFunctions,
+          ...auctionStatusFunctions,
+        ].map(fn => fn()));
+        
+        // Longer delay before tertiary data to let browser breathe
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        console.log('📊 Stage 3: Loading tertiary data...');
+        // Stage 3: Tertiary data - load in smaller batches
+        const batchSize = 5;
+        for (let i = 0; i < tertiaryFetchFunctions.length; i += batchSize) {
+          const batch = tertiaryFetchFunctions.slice(i, i + batchSize);
+          await Promise.allSettled(batch.map(fn => fn()));
+          // Small delay between batches
+          if (i + batchSize < tertiaryFetchFunctions.length) {
+            await new Promise(resolve => setTimeout(resolve, 300));
           }
-        });
+        }
+        
+        console.log('✅ All data loaded and cached');
       } catch (error) {
-        console.error('Synchronized refresh error:', error);
+        console.error('Staged refresh error:', error);
       }
     };
 
+    // Force refresh function (for manual refresh button)
+    const runForceRefresh = () => runStagedRefresh(true);
+
     // Expose the refresh function via ref and optional window event
-    runSyncRef.current = runSynchronizedRefresh;
-    const handleForceRefresh = () => runSynchronizedRefresh();
+    runSyncRef.current = runForceRefresh;
+    const handleForceRefresh = () => runForceRefresh();
     try { window.addEventListener('forceSynchronizedRefresh', handleForceRefresh); } catch {}
 
-    // Initial synchronized refresh
-    runSynchronizedRefresh();
+    // Initial refresh - will use cache if valid
+    runStagedRefresh(didReconnect); // Force refresh on wallet reconnect
 
-    // SINGLE unified polling interval - refreshes every 10 seconds
-    // This keeps the UI continuously aligned with smart contract state
+    // SINGLE unified polling interval - refreshes every 5 minutes
+    // This is very infrequent because we rely on cached data
     const unifiedPollingInterval = setInterval(() => {
-      runSynchronizedRefresh();
-    }, 10000); // 10 seconds - same as wallet reconnect behavior
+      runStagedRefresh(true); // Force refresh on interval
+    }, 300000); // 5 minutes - rely on cache, only refresh periodically
 
     // Listen for account changes in MetaMask
     const handleAccountsChanged = (accounts) => {
       if (accounts.length === 0) {
         console.log('Wallet disconnected, triggering immediate synchronized refresh...');
-        runSynchronizedRefresh();
+        runStagedRefresh(true);
       } else if (accounts[0] !== address) {
         console.log('Account changed, triggering immediate synchronized refresh...');
         // Immediate refresh on account change (same as wallet reconnect)
-        runSynchronizedRefresh();
+        runStagedRefresh(true);
       }
     };
 
@@ -2011,7 +2474,7 @@ export const SwapContractProvider = ({ children }) => {
       try { window.removeEventListener('forceSynchronizedRefresh', handleForceRefresh); } catch {}
       runSyncRef.current = null;
     };
-  }, [AllContracts, address, loading]);
+  }, [AllContracts, address, loading, isCacheValid, TokenRatio]);
 
   const ERC20_ABI = [
     "function approve(address spender, uint256 amount) external returns (bool)",
@@ -2558,6 +3021,11 @@ export const SwapContractProvider = ({ children }) => {
           const rcForced = await txForced.wait();
           console.log('[Reverse Step 1] Forced tx receipt:', rcForced);
           notifySuccess('Reverse swap transaction sent');
+          // Optimistic update: set step1 flag immediately
+          try {
+            const addrLc = (tokenAddress || '').toLowerCase();
+            if (addrLc) setUserReverseStep1((prev) => ({ ...prev, [addrLc]: true, [tokenAddress]: true }));
+          } catch {}
           try {
             const amount = await AuctionWithSigner.getReverseStateBalance(address, tokenAddress).catch(() => 0n);
             setReverseStateMap((prev) => ({ ...prev, [tokenAddress]: Number(ethers.formatUnits(amount || 0n, 18)) }));
@@ -2581,6 +3049,11 @@ export const SwapContractProvider = ({ children }) => {
       if (receipt.status === 1) {
         notifySuccess("Reverse swap completed (Step 1)");
         setTxStatusForSwap("confirmed");
+        // Optimistic update: set step1 flag immediately for instant UI feedback
+        try {
+          const addrLc = (tokenAddress || '').toLowerCase();
+          if (addrLc) setUserReverseStep1((prev) => ({ ...prev, [addrLc]: true, [tokenAddress]: true }));
+        } catch {}
         try {
           // Refresh reverse state balance for this token
           const amount = await AuctionWithSigner.getReverseStateBalance(address, tokenAddress);
@@ -2966,6 +3439,11 @@ export const SwapContractProvider = ({ children }) => {
         setTxStatusForSwap("confirmed");
         // Clear local reverse state record for this token
         setReverseStateMap((prev) => ({ ...prev, [tokenAddress]: 0 }));
+        // Optimistic update: set step2 flag immediately for instant UI feedback
+        try {
+          const addrLc = (tokenAddress || '').toLowerCase();
+          if (addrLc) setUserReverseStep2((prev) => ({ ...prev, [addrLc]: true, [tokenAddress]: true }));
+        } catch {}
         // Refresh on-chain completion flag for immediate UI ✅ update
         try { await HasUserCompletedReverseStep2(); } catch {}
       } else {
@@ -3472,6 +3950,13 @@ export const SwapContractProvider = ({ children }) => {
   notifySuccess(`Swap successful`);
         fetchStateHolding();
         setButtonTextStates((prev) => ({ ...prev, [id]: "Swap Complete!" }));
+        // Optimistic update: set swapped flag immediately for instant UI feedback
+        try {
+          const tokenAddr = (todayAddr || '').toLowerCase();
+          if (tokenAddr) {
+            setUserHashSwapped((prev) => ({ ...prev, [tokenAddr]: 'true', [todayAddr]: 'true' }));
+          }
+        } catch {}
       } else {
         console.error("Swap transaction failed.");
         setTxStatusForSwap("error");
@@ -3708,6 +4193,13 @@ export const SwapContractProvider = ({ children }) => {
         const tx = await claimFn();
         await tx.wait();
         toast.success("Airdrop claimed", { id: claimToastId, position: 'top-center' });
+        // Optimistically set claimed flag immediately for instant UI feedback
+        try {
+          const tokenAddr = (todayToken || '').toLowerCase();
+          if (tokenAddr) {
+            setAirdropClaimed((prev) => ({ ...prev, [tokenAddr]: 'true', [todayToken]: 'true' }));
+          }
+        } catch {}
       } catch (sendErr) {
         if (sendErr?.code === 4001 || /ACTION_REJECTED|User rejected/i.test(sendErr?.message || '')) {
           toast.error("Transaction cancelled by user.", { id: claimToastId, position: 'top-center' });

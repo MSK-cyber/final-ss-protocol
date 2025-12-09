@@ -5,7 +5,7 @@ import MetaMaskIcon from "../assets/metamask-icon.png";
 import gecko from "../assets/gecko.svg";
 import { useSwapContract } from "../Functions/SwapContractFunctions";
 import PropTypes from "prop-types";
-import { useContext, useEffect, useState, useMemo, useCallback, memo } from "react";
+import { useContext, useEffect, useState, useMemo, useCallback, memo, useRef } from "react";
 import { TokensDetails } from "../data/TokensDetails";
 import { useDAvContract } from "../Functions/DavTokenFunctions";
 import IOSpinner from "../Constants/Spinner";
@@ -22,12 +22,12 @@ import SwapComponent from "./Swap/SwapModel";
 import DexModal from "./Swap/DexModal";
 import { explorerUrls } from "../Constants/ContractAddresses";
 import { chainCurrencyMap } from "../../WalletConfig";
-import { calculatePlsValue, calculatePlsValueNumeric, formatWithCommas, truncateDecimals, calculateAmmPlsValue, calculateAmmPlsValueNumeric, calculateStateAmmPlsValueNumeric } from "../Constants/Utils";
+import { calculatePlsValue, calculatePlsValueNumeric, formatWithCommas, truncateDecimals, calculateAmmPlsValueBoth, calculateStateAmmPlsValueNumeric } from "../Constants/Utils";
 import { isImageUrl, notifySuccess, PULSEX_ROUTER_ADDRESS, PULSEX_ROUTER_ABI } from "../Constants/Constants";
 import { generateIdenticon } from "../utils/identicon";
 import { ethers } from "ethers";
 
-// Memoized token row component
+// Memoized token row component - OPTIMIZED: receives pre-calculated AMM value as prop
 const TokenRow = memo(({
   token,
   tokenBalances,
@@ -41,15 +41,16 @@ const TokenRow = memo(({
   nativeSymbol,
   explorerUrl,
   combinedDeployedLP,
-  routerContract,
-  TOKENS
+  statePoolAddress,
+  preCalculatedAmmValue // NEW: Pre-calculated AMM value from parent
 }) => {
   const handleCopyAddress = useCallback(() => {
     navigator.clipboard.writeText(token.TokenAddress);
     notifySuccess(`${token.tokenName} Address copied to clipboard!`)
   }, [token.TokenAddress, token.tokenName]);
-  const { StateBalance,getStateTokenBalanceAndSave } = useSwapContract();
-  const { poolAddress: statePoolAddress } = useStatePoolAddress();
+  // REMOVED: useSwapContract() and useStatePoolAddress() hooks - these caused memory issues
+  // when called in every TokenRow. statePoolAddress is now passed as a prop.
+  // REMOVED: Per-row AMM calculation - now done in parent and passed as preCalculatedAmmValue
 
   // Map chain to the TOKENS key used for the wrapped native asset (used by SwapComponent)
   const nativeWrappedKey = useMemo(() => {
@@ -103,7 +104,6 @@ const TokenRow = memo(({
   })();
   const [showDex, setShowDex] = useState(false);
   const [dexToken, setDexToken] = useState(null);
-  const [ammPlsValue, setAmmPlsValue] = useState("Loading...");
 
   // Show integer current ratio (skip decimals)
   const displayRatio = useMemo(() => {
@@ -112,30 +112,8 @@ const TokenRow = memo(({
     return Math.floor(n);
   }, [token.ratio]);
 
-  // Calculate AMM-based PLS value
-  useEffect(() => {
-    let mounted = true;
-    const calculateValue = async () => {
-      if (!routerContract || !TOKENS || !tokenBalances) {
-        return;
-      }
-      
-      try {
-        const value = await calculateAmmPlsValue(token, tokenBalances, routerContract, TOKENS, chainId);
-        if (mounted) {
-          setAmmPlsValue(value);
-        }
-      } catch (error) {
-        console.error('Error calculating AMM value:', error);
-        if (mounted) {
-          setAmmPlsValue("N/A");
-        }
-      }
-    };
-
-    calculateValue();
-    return () => { mounted = false; };
-  }, [token, tokenBalances, routerContract, TOKENS, chainId]);
+  // AMM value is now passed as prop from parent (preCalculatedAmmValue)
+  // This eliminates per-row RPC calls and makes loading instant
 
   return (
     <tr>
@@ -376,7 +354,7 @@ const TokenRow = memo(({
       </td>
       <td className="text-center">
         <div className="mx-2">
-          {ammPlsValue}
+          {preCalculatedAmmValue || "Loading..."}
           {(() => {
             const rawBal = tokenBalances?.[token.tokenName];
             if (rawBal == null) return null;
@@ -445,6 +423,7 @@ const DetailsInfo = ({ selectedToken }) => {
 
   const chainId = useChainId();
   const { totalStateBurned } = useDAvContract();
+  const { poolAddress: statePoolAddress } = useStatePoolAddress(); // Called once here, passed to all rows
   const [localSearchQuery, setLocalSearchQuery] = useState("");
   const [showDex, setShowDex] = useState(false);
   const { tokens, loading, refetch } = TokensDetails();
@@ -570,40 +549,94 @@ const DetailsInfo = ({ selectedToken }) => {
       .map((token) => token.tokenName);
   }, [loading, filteredTokens, tokens]);
 
-  // Memoized total sum calculation using AMM prices
+  // Ref to track last calculation time to prevent too-frequent recalculations
+  const lastTotalCalcRef = useRef(0);
+  const totalCalcTimeoutRef = useRef(null);
+  
+  // Pre-calculated AMM values for all tokens - calculated once, passed to rows
+  const [ammValuesMap, setAmmValuesMap] = useState({});
+
+  // Memoized total sum AND per-token AMM values calculation
+  // This calculates ALL AMM values at once instead of per-row
   useEffect(() => {
     let mounted = true;
-    const calculateTotal = async () => {
+    
+    // Debounce: don't recalculate more than once every 3 seconds
+    const now = Date.now();
+    const timeSinceLastCalc = now - lastTotalCalcRef.current;
+    const minInterval = 3000; // 3 seconds minimum between calculations (reduced from 10s)
+    
+    // Clear any pending timeout
+    if (totalCalcTimeoutRef.current) {
+      clearTimeout(totalCalcTimeoutRef.current);
+      totalCalcTimeoutRef.current = null;
+    }
+    
+    const calculateAllAmmValues = async () => {
       if (!routerContract || !TOKENS || !tokenBalances || !sortedTokens.length) {
         return;
       }
 
       try {
-        // Calculate sum of all auction tokens using AMM
-        const tokenPromises = sortedTokens.map(token => 
-          calculateAmmPlsValueNumeric(token, tokenBalances, routerContract, TOKENS, chainId)
-        );
-        const tokenValues = await Promise.all(tokenPromises);
-        const tokensPls = tokenValues.reduce((sum, val) => sum + val, 0);
+        lastTotalCalcRef.current = Date.now();
+        
+        // Calculate AMM values for ALL tokens at once using the combined function (2x faster)
+        const tokenPromises = sortedTokens.map(async (token) => {
+          try {
+            const { numeric, display } = await calculateAmmPlsValueBoth(token, tokenBalances, routerContract, TOKENS, chainId);
+            return { tokenName: token.tokenName, numericValue: numeric, displayValue: display };
+          } catch {
+            return { tokenName: token.tokenName, numericValue: 0, displayValue: "N/A" };
+          }
+        });
+        
+        const results = await Promise.all(tokenPromises);
+        
+        // Build the values map for per-row display
+        const newAmmMap = {};
+        let tokensPls = 0;
+        
+        for (const result of results) {
+          newAmmMap[result.tokenName] = result.displayValue;
+          tokensPls += result.numericValue;
+        }
 
         // Add STATE holdings converted via AMM
         const stateBalRaw = tokenBalances?.["STATE"];
         const statePls = await calculateStateAmmPlsValueNumeric(stateBalRaw, routerContract, TOKENS, chainId);
+        const stateResult = await calculateAmmPlsValueBoth({ tokenName: "STATE" }, tokenBalances, routerContract, TOKENS, chainId);
+        newAmmMap["STATE"] = stateResult.display;
 
         const total = tokensPls + statePls;
+        
         if (mounted) {
+          setAmmValuesMap(newAmmMap);
           setTotalSum(formatWithCommas(total.toFixed(0)));
         }
       } catch (error) {
-        console.error('Error calculating total:', error);
+        console.error('Error calculating AMM values:', error);
         if (mounted) {
           setTotalSum("Error");
         }
       }
     };
 
-    calculateTotal();
-    return () => { mounted = false; };
+    // If we calculated recently, schedule a delayed calculation
+    if (timeSinceLastCalc < minInterval) {
+      totalCalcTimeoutRef.current = setTimeout(() => {
+        if (mounted) calculateAllAmmValues();
+      }, minInterval - timeSinceLastCalc);
+    } else {
+      // Otherwise calculate immediately
+      calculateAllAmmValues();
+    }
+    
+    return () => { 
+      mounted = false;
+      if (totalCalcTimeoutRef.current) {
+        clearTimeout(totalCalcTimeoutRef.current);
+      }
+    };
   }, [sortedTokens, tokenBalances, routerContract, TOKENS, chainId]);
 
   // Optimized search handler
@@ -691,8 +724,8 @@ const DetailsInfo = ({ selectedToken }) => {
                       nativeSymbol={nativeSymbol}
                       explorerUrl={explorerUrl}
                       combinedDeployedLP={combinedDeployedLP}
-                      routerContract={routerContract}
-                      TOKENS={TOKENS}
+                      statePoolAddress={statePoolAddress}
+                      preCalculatedAmmValue={ammValuesMap[token.tokenName] || "Loading..."}
                     />
                   ))
                 )}

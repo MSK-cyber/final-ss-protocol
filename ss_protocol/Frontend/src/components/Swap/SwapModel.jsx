@@ -139,8 +139,8 @@ const SwapComponent = ({ preselectToken }) => {
     }
     // immediately fetch once
     refreshRatio();
-    // then every 5s
-    ratioTimerRef.current = setInterval(refreshRatio, 5000);
+    // then every 30s - reduced from 5s to prevent memory issues
+    ratioTimerRef.current = setInterval(refreshRatio, 30000);
     return () => {
       if (ratioTimerRef.current) clearInterval(ratioTimerRef.current);
     };

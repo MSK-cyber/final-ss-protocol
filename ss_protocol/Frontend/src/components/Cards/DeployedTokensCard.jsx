@@ -59,8 +59,8 @@ const DeployedTokensCard = () => {
 
     fetchTokens();
     
-    // Refresh periodically
-    const interval = setInterval(fetchTokens, 15000);
+    // Refresh periodically - reduced from 15s to 60s to prevent memory issues
+    const interval = setInterval(fetchTokens, 60000);
     return () => clearInterval(interval);
   }, [AuctionContract, provider]);
 

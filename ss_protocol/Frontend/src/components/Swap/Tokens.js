@@ -1,5 +1,5 @@
 // Frontend/src/components/Swap/Tokens.js
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { TokensDetails } from "../../data/TokensDetails";
 import { generateIdenticon } from "../../utils/identicon";
 import { useChainId } from "wagmi";
@@ -88,34 +88,38 @@ export function useAllTokens() {
 		};
 	}, [chainId]);
 
-	// Keep your dynamic tokens
-	const dynamicTokensObj = {};
-	dynamicTokens
-		.filter((token) => token.tokenName !== "DAV")
-		.forEach((token) => {
-			let image = token.image || token.logoURI;
-			let emoji;
-			if (token.emoji) emoji = token.emoji;
-			if (token.tokenName === "STATE") image = state;
-			// If no explicit image, use emoji if it's an image URL (data/http)
-			if (!image && typeof emoji === 'string' && (emoji.startsWith('data:image/') || emoji.startsWith('http') || emoji.startsWith('/'))) {
-				image = emoji;
-			}
-			// If still no image, fall back to MetaMask-style identicon by address
-			if (!image) {
-				image = generateIdenticon(token.TokenAddress);
-			}
+	// Memoize dynamic tokens object to prevent new object creation on every render
+	// This is CRITICAL to prevent memory leaks - dynamicTokens changes trigger useTokenBalances refetch
+	const dynamicTokensObj = useMemo(() => {
+		const obj = {};
+		dynamicTokens
+			.filter((token) => token.tokenName !== "DAV")
+			.forEach((token) => {
+				let image = token.image || token.logoURI;
+				let emoji;
+				if (token.emoji) emoji = token.emoji;
+				if (token.tokenName === "STATE") image = state;
+				// If no explicit image, use emoji if it's an image URL (data/http)
+				if (!image && typeof emoji === 'string' && (emoji.startsWith('data:image/') || emoji.startsWith('http') || emoji.startsWith('/'))) {
+					image = emoji;
+				}
+				// If still no image, fall back to MetaMask-style identicon by address
+				if (!image) {
+					image = generateIdenticon(token.TokenAddress);
+				}
 
-			dynamicTokensObj[token.tokenName] = {
-				symbol: token.tokenName,
-				address: token.TokenAddress,
-				decimals: token.decimals ?? 18,
-				image,
-				displayName: token.displayName || token.name || token.tokenName,
-				...(emoji ? { emoji } : {}),
-			};
-		});
+				obj[token.tokenName] = {
+					symbol: token.tokenName,
+					address: token.TokenAddress,
+					decimals: token.decimals ?? 18,
+					image,
+					displayName: token.displayName || token.name || token.tokenName,
+					...(emoji ? { emoji } : {}),
+				};
+			});
+		return obj;
+	}, [JSON.stringify(dynamicTokens.map(t => ({ name: t.tokenName, addr: t.TokenAddress })))]);
 
-	// Merge dynamic tokens with API tokens (dynamic overrides API)
-	return { ...dynamicTokensObj, ...apiTokensObj };
+	// Memoize the final merged object to prevent creating new objects on every render
+	return useMemo(() => ({ ...dynamicTokensObj, ...apiTokensObj }), [dynamicTokensObj, apiTokensObj]);
 }
