@@ -2,6 +2,8 @@ import React, { useEffect, useState, useContext } from 'react';
 import { ContractContext } from '../../Functions/ContractInitialize';
 import { ethers } from 'ethers';
 import '../../Styles/DeployedTokens.css';
+import { getCachedContract } from '../../utils/contractCache';
+import { createSmartPoller } from '../../utils/smartPolling';
 
 const DeployedTokensCard = () => {
   const { AuctionContract, provider } = useContext(ContractContext);
@@ -22,12 +24,8 @@ const DeployedTokensCard = () => {
             const tokenAddress = await AuctionContract.autoRegisteredTokens(i);
             if (!tokenAddress || tokenAddress === ethers.ZeroAddress) continue;
             
-            // Get token details
-            const tokenContract = new ethers.Contract(tokenAddress, [
-              'function name() view returns (string)',
-              'function symbol() view returns (string)',
-              'function balanceOf(address) view returns (uint256)'
-            ], provider);
+            // Get token details using cached contract
+            const tokenContract = getCachedContract(tokenAddress, 'TOKEN_META', provider);
             
             const [name, symbol] = await Promise.all([
               tokenContract.name(),
@@ -57,11 +55,17 @@ const DeployedTokensCard = () => {
       }
     };
 
-    fetchTokens();
+    // Smart polling: 30s active, 120s idle (deployed tokens change rarely)
+    const poller = createSmartPoller(fetchTokens, {
+      activeInterval: 30000,   // 30s when user is active
+      idleInterval: 120000,    // 2 minutes when idle
+      fetchOnStart: true,      // Fetch immediately
+      fetchOnVisible: true,    // Refresh when tab becomes visible
+      name: 'deployed-tokens-card'
+    });
     
-    // Refresh periodically - reduced from 15s to 60s to prevent memory issues
-    const interval = setInterval(fetchTokens, 60000);
-    return () => clearInterval(interval);
+    poller.start();
+    return () => poller.stop();
   }, [AuctionContract, provider]);
 
   if (loading) {

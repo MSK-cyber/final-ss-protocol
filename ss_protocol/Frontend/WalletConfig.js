@@ -3,13 +3,22 @@ import { WagmiAdapter } from "@reown/appkit-adapter-wagmi";
 import { avalanche, pulsechain, bsc, mainnet, sonic } from "@reown/appkit/networks";
 import { QueryClient } from "@tanstack/react-query";
 
-// 0. Setup queryClient
+// 0. Setup queryClient with optimized memory settings
 const queryClient = new QueryClient({
 	defaultOptions: {
 		queries: {
-			staleTime: Infinity,
-			cacheTime: 1000 * 60 * 60 * 24, // 24 hours
+			// Data is fresh for 30 seconds - prevents over-fetching
+			staleTime: 30 * 1000,
+			// Garbage collect unused data after 5 minutes (previously 24 hours!)
+			// This is critical for memory - old setting kept ALL data for 24 hours
+			gcTime: 5 * 60 * 1000,
+			// Don't refetch on window focus - we use smart polling
 			refetchOnWindowFocus: false,
+			// Don't refetch on reconnect
+			refetchOnReconnect: false,
+			// Retry 2 times on failure
+			retry: 2,
+			retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 10000),
 		},
 	},
 });

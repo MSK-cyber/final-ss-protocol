@@ -19,15 +19,19 @@ const InfoPage = () => {
       setStatus("no-wallet");
       return;
     }
-    // While still loading initial data AND we haven't passed gate yet keep 'loading'
-    if (isLoading && !hasPassedGate) {
-      setStatus("loading");
-      return;
-    }
-    // Once loading completes (or we already passed gate) compute final status
+    
+    // Check if we have cached DAV data (non-default values)
     const active = parseFloat(davHolds || "0");
     const expired = parseFloat(davExpireHolds || "0");
     const total = parseFloat(davGovernanceHolds || "0");
+    const hasCachedData = active > 0 || expired > 0 || total > 0;
+    
+    // While still loading initial data AND we haven't passed gate yet AND no cached data, keep 'loading'
+    if (isLoading && !hasPassedGate && !hasCachedData) {
+      setStatus("loading");
+      return;
+    }
+    // Once loading completes (or we already passed gate or have cached data) compute final status
 
     let next = "ok";
     if (isBypassedAddress(address)) next = "ok";
@@ -42,10 +46,10 @@ const InfoPage = () => {
     if (status === "loading" && !hasPassedGate) {
       return (
         <div className="text-center my-5">
-          <div className="spinner-border" role="status">
+          <div className="spinner-border text-light" role="status">
             <span className="visually-hidden">Loading...</span>
           </div>
-          <p className="mt-3 text-muted">Checking your DAV eligibility…</p>
+          <p className="mt-3 text-light">Checking your DAV eligibility…</p>
         </div>
       );
     }

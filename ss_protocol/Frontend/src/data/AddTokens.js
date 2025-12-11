@@ -8,6 +8,7 @@ import { useEffect, useState } from "react";
 // ✅ 1. First hook: for general token config
 export const useAddTokens = () => {
 	const { names, users, Emojies, isUsed } = useDAvContract();
+	// Use context directly for reliable immediate data access
 	const { tokenMap, TimeLeftClaim, supportedToken, isTokenRenounce } = useSwapContract();
 	const [AuthLoading, setAuthLoading] = useState(true);
 
@@ -74,6 +75,7 @@ export const useAddTokens = () => {
 
 
 export const useUsersOwnerTokens = () => {
+	// Use context directly for reliable immediate data access
 	const { UsersSupportedTokens } = useSwapContract();
 	const { names, Emojies } = useDAvContract();
 

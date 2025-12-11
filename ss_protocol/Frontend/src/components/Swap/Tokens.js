@@ -1,5 +1,5 @@
 // Frontend/src/components/Swap/Tokens.js
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import { TokensDetails } from "../../data/TokensDetails";
 import { generateIdenticon } from "../../utils/identicon";
 import { useChainId } from "wagmi";
@@ -88,6 +88,18 @@ export function useAllTokens() {
 		};
 	}, [chainId]);
 
+	// Create stable reference for dynamic tokens to avoid JSON.stringify in useMemo dependency
+	const dynamicTokensKeyRef = useRef('');
+	const currentKey = dynamicTokens
+		.map(t => `${t.tokenName || ''}:${t.TokenAddress || ''}`)
+		.sort()
+		.join('|');
+	
+	// Only update if key actually changed
+	if (dynamicTokensKeyRef.current !== currentKey) {
+		dynamicTokensKeyRef.current = currentKey;
+	}
+
 	// Memoize dynamic tokens object to prevent new object creation on every render
 	// This is CRITICAL to prevent memory leaks - dynamicTokens changes trigger useTokenBalances refetch
 	const dynamicTokensObj = useMemo(() => {
@@ -118,7 +130,7 @@ export function useAllTokens() {
 				};
 			});
 		return obj;
-	}, [JSON.stringify(dynamicTokens.map(t => ({ name: t.tokenName, addr: t.TokenAddress })))]);
+	}, [dynamicTokensKeyRef.current]);
 
 	// Memoize the final merged object to prevent creating new objects on every render
 	return useMemo(() => ({ ...dynamicTokensObj, ...apiTokensObj }), [dynamicTokensObj, apiTokensObj]);

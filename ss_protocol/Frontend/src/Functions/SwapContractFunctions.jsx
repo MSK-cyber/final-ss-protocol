@@ -23,6 +23,10 @@ import { notifyError, notifySuccess, PULSEX_ROUTER_ABI, PULSEX_ROUTER_ADDRESS, W
 import { geckoPoolsForTokenApiUrl } from "../Constants/ExternalLinks";
 import { getRuntimeConfigSync } from "../Constants/RuntimeConfig";
 import { getAuctionTiming, formatDuration, computePhaseFromSlotInfo, computeManualPhase } from "../utils/auctionTiming";
+import { getCachedContract, COMMON_ABIS } from "../utils/contractCache";
+import { createSmartPoller } from "../utils/smartPolling";
+// Zustand stores for optimized state management
+import { useAuctionStore, useUserStore, useTokenStore, useUIStore } from "../stores";
 
 // Provide a safe default object so consumers can destructure without crashing
 const SwapContractContext = createContext({});
@@ -57,6 +61,48 @@ export const SwapContractProvider = ({ children }) => {
   const getDavAddress = () => getDAVContractAddress(chainId);
   const getStateAddress = () => getSTATEContractAddress(chainId);
   const getAuctionAddress = () => getAUCTIONContractAddress(chainId);
+
+  // ========== SAFE BACKGROUND REFRESH SYSTEM ==========
+  // Prevents memory leaks, duplicate requests, and state updates on unmounted components
+  const isMountedRef = useRef(true);
+  const backgroundRefreshInProgressRef = useRef(false);
+  const backgroundRefreshTimeoutRef = useRef(null);
+  
+  // Cleanup on unmount
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      if (backgroundRefreshTimeoutRef.current) {
+        clearTimeout(backgroundRefreshTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Safe background refresh - debounced, prevents duplicates, checks mount state
+  const triggerBackgroundRefresh = useCallback(() => {
+    // Debounce: wait 500ms before starting, cancel if called again
+    if (backgroundRefreshTimeoutRef.current) {
+      clearTimeout(backgroundRefreshTimeoutRef.current);
+    }
+    
+    backgroundRefreshTimeoutRef.current = setTimeout(async () => {
+      // Skip if already in progress or component unmounted
+      if (backgroundRefreshInProgressRef.current || !isMountedRef.current) return;
+      
+      backgroundRefreshInProgressRef.current = true;
+      try {
+        // Only fetch if component is still mounted
+        if (isMountedRef.current) {
+          await fetchAllCompletionFlagsFast();
+        }
+      } catch (e) {
+        console.debug('Background refresh error:', e);
+      } finally {
+        backgroundRefreshInProgressRef.current = false;
+      }
+    }, 500);
+  }, []);
 
   const [claiming, setClaiming] = useState(false);
   const [txStatusForSwap, setTxStatusForSwap] = useState("");
@@ -439,10 +485,10 @@ export const SwapContractProvider = ({ children }) => {
       // Batch fetch all names and symbols in parallel
       const detailPromises = validAddresses.map(async (tokenAddress, idx) => {
         try {
-          const tokenContract = new ethers.Contract(
+          const tokenContract = getCachedContract(
             tokenAddress,
-            ['function name() view returns (string)', 'function symbol() view returns (string)'],
-            httpProvider // Use the memoized provider
+            'ERC20_META',
+            httpProvider
           );
           const [name, symbol] = await Promise.all([
             tokenContract.name().catch(() => `Token${idx}`),
@@ -924,9 +970,9 @@ export const SwapContractProvider = ({ children }) => {
 
             // Resolve display symbol and stable keys (id and address)
             const currentProvider = wsConnected ? wsProvider : httpProvider;
-            const tokenContract = new ethers.Contract(
+            const tokenContract = getCachedContract(
               todayToken,
-              ['function symbol() view returns (string)'],
+              'ERC20_SYMBOL',
               currentProvider
             );
             const tokenName = await tokenContract.symbol().catch(() => 'Unknown');
@@ -1182,13 +1228,24 @@ export const SwapContractProvider = ({ children }) => {
     const setupResyncInterval = () => {
       if (resyncInterval) clearInterval(resyncInterval);
 
-      resyncInterval = setInterval(() => {
+      // Use smart polling for resync: 30s active, 60s idle
+      const resyncPoller = createSmartPoller(() => {
         if (isActive) {
           fetchAuctionTimes(false);
         }
-      }, 60000); // 60s resync - reduced from 10s to prevent memory issues
+      }, {
+        activeInterval: 30000,  // 30s when user is active
+        idleInterval: 60000,    // 60s when user is idle
+        fetchOnStart: false,    // Don't fetch on start, initial fetch happens elsewhere
+        fetchOnVisible: true,   // Refresh when tab becomes visible
+        name: 'auction-resync'
+      });
 
-      console.log("🔄 Resync interval set to 60 seconds");
+      resyncPoller.start();
+      // Store reference for cleanup
+      resyncInterval = resyncPoller;
+
+      console.log("🔄 Smart resync polling started (30s active, 60s idle)");
     };
 
     const handleVisibilityChange = () => {
@@ -1287,7 +1344,12 @@ export const SwapContractProvider = ({ children }) => {
       isActive = false;
 
       if (countdownInterval) clearInterval(countdownInterval);
-      if (resyncInterval) clearInterval(resyncInterval);
+      // Stop smart poller if it exists
+      if (resyncInterval && resyncInterval.stop) {
+        resyncInterval.stop();
+      } else if (resyncInterval) {
+        clearInterval(resyncInterval);
+      }
 
       // Remove event listeners
       document.removeEventListener('visibilitychange', handleVisibilityChange);
@@ -1476,9 +1538,9 @@ export const SwapContractProvider = ({ children }) => {
         try {
           if (!TokenAddress || TokenAddress === ethers.ZeroAddress) continue;
           
-          const tokenContract = new ethers.Contract(
+          const tokenContract = getCachedContract(
             TokenAddress,
-            ERC20_ABI,
+            'ERC20_APPROVAL',
             httpProvider
           );
           const rawBalance = await tokenContract.balanceOf(auctionAddr);
@@ -1506,7 +1568,7 @@ export const SwapContractProvider = ({ children }) => {
   const getStateTokenBalanceAndSave = async () => {
     try {
       const stateAddress = getStateAddress();
-      const tokenContract = new ethers.Contract(stateAddress, ERC20_ABI, httpProvider);  // Use httpProvider
+      const tokenContract = getCachedContract(stateAddress, 'ERC20_APPROVAL', httpProvider);
       const rawBalance = await tokenContract.balanceOf(getAuctionAddress());
       const formattedBalance = Math.floor(Number(ethers.formatUnits(rawBalance, 18)));
 
@@ -1648,19 +1710,9 @@ export const SwapContractProvider = ({ children }) => {
     };
   }
 
-  const TokenABI = [
-    {
-      type: "function",
-      name: "renounceOwnership",
-      inputs: [],
-      outputs: [],
-      stateMutability: "nonpayable",
-    },
-  ];
-
   const renounceTokenContract = async (tokenAddress, tokenName) => {
     try {
-      const tokenContract = new ethers.Contract(tokenAddress, TokenABI, signer);
+      const tokenContract = getCachedContract(tokenAddress, 'OWNABLE', signer);
 
       const tx = await tokenContract.renounceOwnership();
       await tx.wait();
@@ -1713,9 +1765,9 @@ export const SwapContractProvider = ({ children }) => {
             tokenSymbol = "DAV";
           } else {
             // For other tokens, try to check owner and also get symbol
-            const tokenContract = new ethers.Contract(
+            const tokenContract = getCachedContract(
               TokenAddress,
-              ['function owner() view returns (address)', 'function symbol() view returns (string)'],
+              'OWNABLE_META',
               httpProvider || provider
             );
             const [owner, symbol] = await Promise.all([
@@ -1893,13 +1945,9 @@ export const SwapContractProvider = ({ children }) => {
         
         // Use contract runner if available, otherwise fallback to provider
         const readProvider = AllContracts.AuctionContract.runner || provider || httpProvider;
-        const erc20 = new ethers.Contract(
+        const erc20 = getCachedContract(
           todayAddr,
-          [
-            'function name() view returns (string)',
-            'function symbol() view returns (string)',
-            'function decimals() view returns (uint8)'
-          ],
+          'TOKEN_META',
           readProvider
         );
         
@@ -2042,9 +2090,9 @@ export const SwapContractProvider = ({ children }) => {
             continue;
           }
 
-          const tokenContract = new ethers.Contract(
+          const tokenContract = getCachedContract(
             tokenAddr,
-            ERC20Name_ABI,
+            'ERC20_NAME',
             provider
           );
           
@@ -2079,14 +2127,6 @@ export const SwapContractProvider = ({ children }) => {
     try {
       // Step 1: Get all token addresses for user
       const tokenMap = await ReturnfetchUserTokenAddresses(); // { tokenName: tokenAddress }
-      const ERC20_ABI = [
-        "function balanceOf(address owner) view returns (uint256)",
-        "function decimals() view returns (uint8)"
-      ];
-      const TOKEN_META_ABI = [
-        "function symbol() view returns (string)",
-        "function name() view returns (string)"
-      ];
       // Use the canonical burn address where LP tokens are sent
       const targetAddress = "0x000000000000000000000000000000000000dEaD";
 
@@ -2116,9 +2156,9 @@ export const SwapContractProvider = ({ children }) => {
             return { tokenName, tokenAddress, pairAddress, balance: 0, symbol: "" };
           }
 
-          // Create ERC20 contract for LP token
-          const lpTokenContract = new ethers.Contract(pairAddress, ERC20_ABI, httpProvider || provider);
-          const tokenContract = new ethers.Contract(tokenAddress, TOKEN_META_ABI, httpProvider || provider);
+          // Create cached ERC20 contracts for LP token and token
+          const lpTokenContract = getCachedContract(pairAddress, 'ERC20_APPROVAL', httpProvider || provider);
+          const tokenContract = getCachedContract(tokenAddress, 'ERC20_META', httpProvider || provider);
 
           // Fetch balance, decimals, and symbol in parallel
           const [balanceRaw, decimals, tokenSymbol] = await Promise.all([
@@ -2178,7 +2218,7 @@ export const SwapContractProvider = ({ children }) => {
             results["state"] = entry;  // Also add lowercase key
             results[(getSTATEContractAddress(chainId) || "").toLowerCase()] = entry;
           } else {
-            const lpTokenContract = new ethers.Contract(statePairAddress, ERC20_ABI, httpProvider || provider);
+            const lpTokenContract = getCachedContract(statePairAddress, 'ERC20_APPROVAL', httpProvider || provider);
             let balanceRaw = 0n;
             let decimals = 18;
             try { balanceRaw = await lpTokenContract.balanceOf(targetAddress); } catch { balanceRaw = 0n; }
@@ -2209,12 +2249,20 @@ export const SwapContractProvider = ({ children }) => {
   // Ensure LP burned amounts are fetched on init and when environment changes
   useEffect(() => {
     if (!AllContracts?.AuctionContract || !provider) return;
-    try { fetchBurnLpAmount(); } catch {}
-    // Optionally refresh periodically (lightweight)
-    const id = setInterval(() => {
+    
+    // Smart polling for burn LP amounts: 30s active, 120s idle
+    const poller = createSmartPoller(() => {
       try { fetchBurnLpAmount(); } catch {}
-    }, 60000); // 60s
-    return () => clearInterval(id);
+    }, {
+      activeInterval: 30000,   // 30s when user is active
+      idleInterval: 120000,    // 2 minutes when idle (this data changes slowly)
+      fetchOnStart: true,      // Fetch immediately
+      fetchOnVisible: true,    // Refresh when tab becomes visible
+      name: 'burn-lp-amounts'
+    });
+    
+    poller.start();
+    return () => poller.stop();
   }, [AllContracts?.AuctionContract, provider, address, chainId]);
 
   const setDavAndStateIntoSwap = async () => {
@@ -2443,11 +2491,19 @@ export const SwapContractProvider = ({ children }) => {
     // Initial refresh - will use cache if valid
     runStagedRefresh(didReconnect); // Force refresh on wallet reconnect
 
-    // SINGLE unified polling interval - refreshes every 5 minutes
-    // This is very infrequent because we rely on cached data
-    const unifiedPollingInterval = setInterval(() => {
+    // Smart unified polling: 60s active, 5 min idle
+    // Uses smart polling to speed up when user is active
+    const unifiedPoller = createSmartPoller(() => {
       runStagedRefresh(true); // Force refresh on interval
-    }, 300000); // 5 minutes - rely on cache, only refresh periodically
+    }, {
+      activeInterval: 60000,   // 1 minute when user is active
+      idleInterval: 300000,    // 5 minutes when idle
+      fetchOnStart: false,     // Don't fetch on start, initial refresh happens above
+      fetchOnVisible: true,    // Refresh when tab becomes visible
+      name: 'unified-polling'
+    });
+    
+    unifiedPoller.start();
 
     // Listen for account changes in MetaMask
     const handleAccountsChanged = (accounts) => {
@@ -2467,7 +2523,7 @@ export const SwapContractProvider = ({ children }) => {
     }
 
     return () => {
-      clearInterval(unifiedPollingInterval);
+      unifiedPoller.stop();
       if (window.ethereum) {
         window.ethereum.removeListener('accountsChanged', handleAccountsChanged);
       }
@@ -2476,27 +2532,13 @@ export const SwapContractProvider = ({ children }) => {
     };
   }, [AllContracts, address, loading, isCacheValid, TokenRatio]);
 
-  const ERC20_ABI = [
-    "function approve(address spender, uint256 amount) external returns (bool)",
-    "function allowance(address owner, address spender) external view returns (uint256)",
-    "function balanceOf(address account) external view returns (uint256)",
-    "function decimals() view returns (uint8)",
-  ];
-
-  // Minimal Pair ABI for reserve-based preview of reverse step 1 output
-  const IPAIR_ABI = [
-    "function getReserves() view returns (uint112 reserve0, uint112 reserve1, uint32 blockTimestampLast)",
-    "function token0() view returns (address)",
-    "function token1() view returns (address)",
-  ];
-
   // Preview STATE out for reverse step 1 using on-chain reserves (matches ReverseAuctionCalculations)
   const estimateReverseStep1StateOut = useCallback(async (auctionTokenAddr, amountIn) => {
     try {
       if (!AllContracts?.AuctionContract || !auctionTokenAddr || !amountIn || amountIn === 0n) return 0n;
       const pairAddr = await AllContracts.AuctionContract.getPairAddress(auctionTokenAddr);
       if (!pairAddr || pairAddr === ethers.ZeroAddress) return 0n;
-      const pair = new ethers.Contract(pairAddr, IPAIR_ABI, httpProvider || provider);
+      const pair = getCachedContract(pairAddr, 'PAIR', httpProvider || provider);
       const [reserve0, reserve1] = await pair.getReserves();
       const token0 = await pair.token0();
       const token1 = await pair.token1();
@@ -2620,7 +2662,7 @@ export const SwapContractProvider = ({ children }) => {
       }
 
       const auctionAddr = getAuctionAddress();
-      const tokenContract = new ethers.Contract(tokenAddress, ERC20_ABI, signer);
+      const tokenContract = getCachedContract(tokenAddress, 'ERC20_APPROVAL', signer);
 
       // Check allowance; approve max if needed (tokensToBurn is computed on-chain)
       setButtonTextStates((prev) => ({ ...prev, [id]: "Checking allowance..." }));
@@ -2659,18 +2701,15 @@ export const SwapContractProvider = ({ children }) => {
         if (receipt.status === 1) {
   notifySuccess(`Ratio swap completed`);
           setTxStatusForSwap("confirmed");
-          // Refresh dependent data
-          await getOutPutAmount();
-          await getTokensBurned();
-          // Refresh step-2 completion flag immediately
-          try { await HasUserBurnedForToken(); } catch {}
-          // Also optimistically set the address-keyed flag to true for instant UI feedback
+          // Optimistically set the address-keyed flag to true for instant UI feedback
           try {
             const addr = (tokenAddress || '').toLowerCase();
             if (addr) {
               setUserHasBurned((prev) => ({ ...prev, [addr]: true }));
             }
           } catch {}
+          // Trigger safe background refresh (debounced, mount-safe)
+          triggerBackgroundRefresh();
         } else {
           notifyError("Burn transaction failed");
           setTxStatusForSwap("error");
@@ -2709,9 +2748,7 @@ export const SwapContractProvider = ({ children }) => {
     } finally {
       setSwappingStates((prev) => ({ ...prev, [id]: false }));
       setButtonTextStates((prev) => ({ ...prev, [id]: "Ratio Swap" }));
-      // Update auction state flags
-      await CheckIsAuctionActive();
-      await HasSwappedAucton();
+      // Trigger safe background refresh (already debounced from success path)
     }
   };
 
@@ -2803,7 +2840,7 @@ export const SwapContractProvider = ({ children }) => {
       }
 
       // Use user's allowed amount based on last 3 normal-auction cycles (contract will auto-cap as well)
-      const tokenCtr = new ethers.Contract(tokenAddress, ERC20_ABI, signer);
+      const tokenCtr = getCachedContract(tokenAddress, 'ERC20_APPROVAL', signer);
       let decimals = 18;
       try { decimals = Number(await tokenCtr.decimals()); } catch {}
       
@@ -2870,7 +2907,7 @@ export const SwapContractProvider = ({ children }) => {
         }
         // Check vault STATE balance
         const stateTokenAddress = getStateAddress();
-        const stateCtr = new ethers.Contract(stateTokenAddress, ERC20_ABI, httpProvider || provider);
+        const stateCtr = getCachedContract(stateTokenAddress, 'ERC20_APPROVAL', httpProvider || provider);
         const vaultBal = await stateCtr.balanceOf(getAuctionAddress());
         if (BigInt(vaultBal) < expectedStateOut) {
           notifyError("Vault has insufficient STATE for this swap.");
@@ -3054,14 +3091,8 @@ export const SwapContractProvider = ({ children }) => {
           const addrLc = (tokenAddress || '').toLowerCase();
           if (addrLc) setUserReverseStep1((prev) => ({ ...prev, [addrLc]: true, [tokenAddress]: true }));
         } catch {}
-        try {
-          // Refresh reverse state balance for this token
-          const amount = await AuctionWithSigner.getReverseStateBalance(address, tokenAddress);
-          // Preserve decimals so small STATE amounts (>0 and <1) aren't rounded down to 0
-          setReverseStateMap((prev) => ({ ...prev, [tokenAddress]: Number(ethers.formatUnits(amount, 18)) }));
-          // Refresh on-chain completion flag for immediate UI ✅ update
-          try { await HasUserCompletedReverseStep1(); } catch {}
-        } catch {}
+        // Safe background refresh (debounced, mount-aware)
+        triggerBackgroundRefresh();
       } else {
         notifyError("Reverse swap transaction failed");
         setTxStatusForSwap("error");
@@ -3169,7 +3200,8 @@ export const SwapContractProvider = ({ children }) => {
     } finally {
       setSwappingStates((prev) => ({ ...prev, [id]: false }));
       setButtonTextStates((prev) => ({ ...prev, [id]: "Ratio Swap" }));
-      await HasReverseSwappedAucton();
+      // Safe background refresh (debounced, mount-aware)
+      triggerBackgroundRefresh();
     }
   };
 
@@ -3236,7 +3268,7 @@ export const SwapContractProvider = ({ children }) => {
 
       // Approval: ensure STATE has allowance to AuctionSwap (amount unknown; approve if currently zero)
       const stateTokenAddress = getStateAddress();
-      const stateCtr = new ethers.Contract(stateTokenAddress, ERC20_ABI, signer);
+      const stateCtr = getCachedContract(stateTokenAddress, 'ERC20_APPROVAL', signer);
 
       // Approve if needed
       setButtonTextStates((prev) => ({ ...prev, [id]: "Checking allowance..." }));
@@ -3365,11 +3397,11 @@ export const SwapContractProvider = ({ children }) => {
               AuctionWithSigner.hasUserCompletedReverseStep1(address, todayAddr).catch(() => undefined),
               AuctionWithSigner.getReverseStateBalance(address, todayAddr).catch(() => 0n),
               AllContracts.AuctionContract.getUserStateBalance(address, todayAddr).catch(() => 0n),
-              new ethers.Contract(getStateAddress(), ERC20_ABI, httpProvider || provider).balanceOf(address).catch(() => 0n),
+              getCachedContract(getStateAddress(), 'ERC20_APPROVAL', httpProvider || provider).balanceOf(address).catch(() => 0n),
             ]);
             let vaultToken = 0n;
             try {
-              const tokenCtr = new ethers.Contract(todayAddr, ERC20_ABI, httpProvider || provider);
+              const tokenCtr = getCachedContract(todayAddr, 'ERC20_APPROVAL', httpProvider || provider);
               vaultToken = await tokenCtr.balanceOf(getAuctionAddress());
             } catch {}
             console.log('[Reverse Step 2] Diagnostics:', {
@@ -3444,8 +3476,8 @@ export const SwapContractProvider = ({ children }) => {
           const addrLc = (tokenAddress || '').toLowerCase();
           if (addrLc) setUserReverseStep2((prev) => ({ ...prev, [addrLc]: true, [tokenAddress]: true }));
         } catch {}
-        // Refresh on-chain completion flag for immediate UI ✅ update
-        try { await HasUserCompletedReverseStep2(); } catch {}
+        // Safe background refresh (debounced, mount-aware)
+        triggerBackgroundRefresh();
       } else {
         notifyError("Step 2 transaction failed");
         setTxStatusForSwap("error");
@@ -3463,7 +3495,8 @@ export const SwapContractProvider = ({ children }) => {
     } finally {
       setSwappingStates((prev) => ({ ...prev, [id]: false }));
       setButtonTextStates((prev) => ({ ...prev, [id]: "Ratio Swap" }));
-      await HasReverseSwappedAucton();
+      // Safe background refresh (debounced, mount-aware)
+      triggerBackgroundRefresh();
     }
   };
 
@@ -3488,7 +3521,7 @@ export const SwapContractProvider = ({ children }) => {
     console.log('[Step3] STATE needed for swap:', ethers.formatEther(userStateNeeded));
     
     // Always approve STATE token to the SWAP contract if insufficient
-    const stateTokenContract = new ethers.Contract(getStateAddress(), ERC20_ABI, signer);
+    const stateTokenContract = getCachedContract(getStateAddress(), 'ERC20_APPROVAL', signer);
     console.log('[Step3] STATE token address:', getStateAddress());
     
     // Check actual STATE balance in user's wallet FIRST
@@ -3643,7 +3676,7 @@ export const SwapContractProvider = ({ children }) => {
           return;
         }
         // Check reserves non-zero
-        const pair = new ethers.Contract(pairAddr, IPAIR_ABI, httpProvider || provider);
+        const pair = getCachedContract(pairAddr, 'PAIR', httpProvider || provider);
         const [r0, r1] = await pair.getReserves().catch(() => [0n, 0n]);
         const t0 = await pair.token0();
         const t1 = await pair.token1();
@@ -3826,14 +3859,13 @@ export const SwapContractProvider = ({ children }) => {
         if ((simErr?.shortMessage || simErr?.message)?.toLowerCase?.().includes('missing revert data')) {
           // Build a quick diagnostic snapshot to help user
           try {
-            const stateContract = new ethers.Contract(getStateAddress(), ERC20_ABI, httpProvider || provider);
+            const stateContract = getCachedContract(getStateAddress(), 'ERC20_APPROVAL', httpProvider || provider);
             const currentCycle = await readOnlyAuction.getCurrentAuctionCycle(todayAddr).catch(() => undefined);
             let poolDiagnostic = '';
             try {
               const pairAddr = await readOnlyAuction.getPairAddress(todayAddr).catch(() => null);
               if (pairAddr && pairAddr !== ethers.ZeroAddress) {
-                const IPAIR_ABI = ['function getReserves() view returns (uint112,uint112,uint32)', 'function token0() view returns (address)', 'function token1() view returns (address)'];
-                const pair = new ethers.Contract(pairAddr, IPAIR_ABI, httpProvider || provider);
+                const pair = getCachedContract(pairAddr, 'PAIR', httpProvider || provider);
                 const [r0, r1] = await pair.getReserves();
                 const t0 = await pair.token0();
                 const t1 = await pair.token1();
@@ -3948,7 +3980,6 @@ export const SwapContractProvider = ({ children }) => {
         console.log("Swap Complete!");
         setTxStatusForSwap("confirmed");
   notifySuccess(`Swap successful`);
-        fetchStateHolding();
         setButtonTextStates((prev) => ({ ...prev, [id]: "Swap Complete!" }));
         // Optimistic update: set swapped flag immediately for instant UI feedback
         try {
@@ -3957,14 +3988,13 @@ export const SwapContractProvider = ({ children }) => {
             setUserHashSwapped((prev) => ({ ...prev, [tokenAddr]: 'true', [todayAddr]: 'true' }));
           }
         } catch {}
+        // Safe background refresh (debounced, mount-aware)
+        triggerBackgroundRefresh();
       } else {
         console.error("Swap transaction failed.");
         setTxStatusForSwap("error");
         setButtonTextStates((prev) => ({ ...prev, [id]: "Swap failed" }));
       }
-      await CheckIsAuctionActive();
-      await HasSwappedAucton();
-      await HasReverseSwappedAucton();
     } catch (error) {
       console.error("Error during token swap:", error);
 
@@ -4000,9 +4030,8 @@ export const SwapContractProvider = ({ children }) => {
       setSwappingStates((prev) => ({ ...prev, [id]: false }));
       setButtonTextStates((prev) => ({ ...prev, [id]: "Swap Completed" }));
       setButtonTextStates((prev) => ({ ...prev, [id]: "Swap" }));
-      await CheckIsAuctionActive();
-      await HasSwappedAucton();
-      await HasReverseSwappedAucton();
+      // Safe background refresh (debounced, mount-aware)
+      triggerBackgroundRefresh();
     }
   };
 
@@ -4151,13 +4180,13 @@ export const SwapContractProvider = ({ children }) => {
           } catch (sigErr) {
             // If signature lookup fails in this environment, try constructing a minimal legacy contract
             if (!distAddr) throw sigErr;
-            const legacy = new ethers.Contract(distAddr, ["function claim()"], signer);
+            const legacy = getCachedContract(distAddr, ["function claim()"], signer);
             claimCtx = legacy;
             claimFn = legacy.getFunction(fnKey);
           }
         } else {
           if (!distAddr) throw new Error("AirdropDistributor address unavailable");
-          const legacy = new ethers.Contract(distAddr, ["function claim()"], signer);
+          const legacy = getCachedContract(distAddr, ["function claim()"], signer);
           claimCtx = legacy;
           claimFn = legacy.getFunction(fnKey);
         }
@@ -4200,6 +4229,8 @@ export const SwapContractProvider = ({ children }) => {
             setAirdropClaimed((prev) => ({ ...prev, [tokenAddr]: 'true', [todayToken]: 'true' }));
           }
         } catch {}
+        // Trigger safe background refresh (debounced, mount-safe)
+        triggerBackgroundRefresh();
       } catch (sendErr) {
         if (sendErr?.code === 4001 || /ACTION_REJECTED|User rejected/i.test(sendErr?.message || '')) {
           toast.error("Transaction cancelled by user.", { id: claimToastId, position: 'top-center' });
@@ -4220,12 +4251,6 @@ export const SwapContractProvider = ({ children }) => {
         toast.error(msg, { id: claimToastId, position: 'top-center' });
         return;
       }
-      await isAirdropClaimed();
-    // Refresh claimable amounts to ensure Step 1 UI reflects no further units when exhausted
-    try { await getAirdropAmount?.(); } catch {}
-      await getInputAmount();
-      await getOutPutAmount();
-      await getTokensBurned();
     } catch (e) {
       console.error("Error claiming tokens:", e);
       if (e?.code === 4001 || /ACTION_REJECTED|User rejected/i.test(e?.message || "")) {
@@ -4272,13 +4297,10 @@ export const SwapContractProvider = ({ children }) => {
   const toastId = toast.loading(`Adding token to wallet...`, { position: 'top-center' });
 
     try {
-      // Fetch actual symbol and decimals from the contract
-      const tokenContract = new ethers.Contract(
+      // Fetch actual symbol and decimals from the contract using cached contract
+      const tokenContract = getCachedContract(
         tokenAddress,
-        [
-          "function symbol() view returns (string)",
-          "function decimals() view returns (uint8)"
-        ],
+        'TOKEN_META',
         httpProvider || provider
       );
 
@@ -4382,7 +4404,7 @@ export const SwapContractProvider = ({ children }) => {
       // Read reserves and token ordering
       let stateReserve, wplsReserve;
       try {
-        const pair = new ethers.Contract(stateWplsPair, IPAIR_ABI, httpProvider || provider);
+        const pair = getCachedContract(stateWplsPair, 'PAIR', httpProvider || provider);
         const [r0, r1] = await pair.getReserves();
         const token0 = await pair.token0();
         const stateAddrLc = (getStateAddress() || '').toLowerCase();
@@ -4514,7 +4536,7 @@ export const SwapContractProvider = ({ children }) => {
       try {
         if (chainId === 369) {
           // ---- PulseX path ----
-          const routerContract = new ethers.Contract(
+          const routerContract = getCachedContract(
             PULSEX_ROUTER_ADDRESS,
             PULSEX_ROUTER_ABI,
             signer
@@ -4562,7 +4584,7 @@ export const SwapContractProvider = ({ children }) => {
     }
 
     try {
-      const contract = new ethers.Contract(stateAddress, ERC20_ABI, signer);
+      const contract = getCachedContract(stateAddress, 'ERC20_APPROVAL', signer);
       const allowance = await contract.allowance(address, swapContractAddress);
       const amount = ethers.parseUnits(amountIn || '0', 18);
       const needsApproval = BigInt(allowance) < BigInt(amount);
@@ -4690,92 +4712,251 @@ export const SwapContractProvider = ({ children }) => {
       console.error("Error fetching DAI price:", error);
     }
   }
+
+  // ============ ZUSTAND STORE SYNC ============
+  // Sync React Context state to Zustand stores for gradual migration
+  // Components can start using stores directly for better performance
+  const setAuctionBatch = useAuctionStore(state => state.setBatch);
+  const setUserBatch = useUserStore(state => state.setBatch);
+  const setTokenBatch = useTokenStore(state => state.setBatch);
+  const setUIBatch = useUIStore(state => state.setBatch);
+
+  // Sync auction data to store (with both casing for compatibility)
+  useEffect(() => {
+    setAuctionBatch({
+      auctionTime: AuctionTime,
+      AuctionTime: AuctionTime, // Alias for context compatibility
+      auctionPhase,
+      auctionPhaseSeconds,
+      auctionEndAt: AuctionEndAt,
+      chainTimeSkew,
+      duration: auctionDuration,
+      interval: auctionInterval,
+      todayToken: todayTokenAddress,
+      todayTokenAddress,
+      todayTokenSymbol,
+      todayTokenName,
+      todayTokenDecimals,
+      todayTokenIndex: null,
+      isReverse: reverseWindowActive,
+      reverseWindowActive,
+      IsAuctionActive: IsAuctionActive,
+      isReversed: isReversed,
+      InputAmount: InputAmount,
+      OutPutAmount: OutPutAmount,
+      AirDropAmount: AirDropAmount,
+      CurrentCycleCount: CurrentCycleCount,
+    });
+  }, [AuctionTime, auctionPhase, auctionPhaseSeconds, AuctionEndAt, chainTimeSkew, auctionDuration, auctionInterval, todayTokenAddress, todayTokenSymbol, todayTokenName, todayTokenDecimals, reverseWindowActive, IsAuctionActive, isReversed, InputAmount, OutPutAmount, AirDropAmount, CurrentCycleCount, setAuctionBatch]);
+
+  // Sync user data to store (with both casing for compatibility)
+  useEffect(() => {
+    setUserBatch({
+      address,
+      userHashSwapped: userHashSwapped,
+      userHasSwapped: userHashSwapped,
+      userHasBurned,
+      userHasAirdropClaimed: AirdropClaimed,
+      airdropClaimed: AirdropClaimed,
+      AirdropClaimed: AirdropClaimed, // Alias for context compatibility
+      userReverseStep1,
+      userReverseStep2,
+      userHasReverseSwapped,
+      state_Balance: StateBalance,
+      isClaimProcessing: isCliamProcessing,
+      reverseStateMap,
+      UsersSupportedTokens: UsersSupportedTokens, // Alias for context compatibility
+    });
+  }, [address, userHashSwapped, userHasBurned, AirdropClaimed, userReverseStep1, userReverseStep2, userHasReverseSwapped, StateBalance, isCliamProcessing, reverseStateMap, UsersSupportedTokens, setUserBatch]);
+
+  // Sync token data to store (with both casing for compatibility)
+  useEffect(() => {
+    setTokenBatch({
+      tokenNames: TokenNames,
+      TokenNames: TokenNames, // Alias for context compatibility
+      tokenMap,
+      tokenRatio: TokenRatio,
+      TokenRatio: TokenRatio, // Alias for context compatibility
+      tokenRatios: TokenRatio,
+      burnedAmount: burnedAmount,
+      burnedAmounts: burnedAmount,
+      tokenPairAddress: TokenPariAddress,
+      pairAddresses: TokenPariAddress,
+      tokenBalance: TokenBalance,
+      TokenBalance: TokenBalance, // Alias for context compatibility
+      tokenBalances: TokenBalance,
+      isAuctionActive: IsAuctionActive,
+      isReversed,
+      isTokenRenounce: isTokenRenounce,
+      renounceStatus: isTokenRenounce,
+      currentCycleCount: CurrentCycleCount,
+      burnedLPAmount: burnedLPAmount,
+      burnedLPAmounts: burnedLPAmount,
+      RatioTargetsofTokens: TokenRatio, // Use TokenRatio as ratio targets
+      supportedToken: supportedToken,
+      TimeLeftClaim: TimeLeftClaim,
+      pstateToPlsRatio: pstateToPlsRatio,
+      DaipriceChange: DaipriceChange,
+    });
+  }, [TokenNames, tokenMap, TokenRatio, burnedAmount, TokenPariAddress, TokenBalance, IsAuctionActive, isReversed, isTokenRenounce, CurrentCycleCount, burnedLPAmount, supportedToken, TimeLeftClaim, pstateToPlsRatio, DaipriceChange, setTokenBatch]);
+
+  // Sync UI state to store (with both casing for compatibility)
+  useEffect(() => {
+    setUIBatch({
+      isLoading: loading,
+      loading: loading,
+      swappingStates,
+      dexSwappingStates: DexswappingStates,
+      DexswappingStates: DexswappingStates, // Alias for context compatibility
+      buttonTextStates,
+      dexButtonTextStates: DexbuttonTextStates,
+      txStatusForSwap,
+      txStatusForAdding,
+      claiming,
+      isCliamProcessing: isCliamProcessing, // Alias for typo in original
+    });
+  }, [loading, swappingStates, DexswappingStates, buttonTextStates, DexbuttonTextStates, txStatusForSwap, txStatusForAdding, claiming, isCliamProcessing, setUIBatch]);
+
+  // Memoize the context value to prevent unnecessary re-renders
+  // This is critical for performance - without this, every state change
+  // causes ALL consumers of useSwapContract() to re-render
+  const contextValue = useMemo(() => ({
+    //WALLET States
+    provider,
+    signer,
+    loading,
+    address,
+    handleDexTokenSwap,
+    performRatioSwap,
+    performReverseSwapStep1,
+    performReverseSwapStep2,
+    CalculationOfCost,
+    setDexSwappingStates,
+    DexswappingStates,
+    UsersSupportedTokens,
+    TotalCost,
+    isAirdropClaimed,
+    setClaiming,
+    TokenBalance,
+    claiming,
+    SwapTokens,
+    setDavAndStateIntoSwap,
+    handleAddToken,
+    userHashSwapped,
+    userHasReverseSwapped,
+    isCliamProcessing,
+    isTokenRenounce,
+    AddTokenIntoSwapContract,
+    isTokenSupporteed,
+    burnedAmount,
+    buttonTextStates,
+    DexbuttonTextStates,
+    DavAddress,
+    StateAddress,
+    StateBalance,
+    swappingStates,
+    getStateTokenBalanceAndSave,
+    TokenPariAddress,
+    AuctionTime,
+    auctionPhase,
+    auctionPhaseSeconds,
+    txStatusForSwap,
+    userHasBurned,
+    userReverseStep1,
+    userReverseStep2,
+    fetchUserTokenAddresses,
+    AirdropClaimed,
+    isReversed,
+    InputAmount,
+    burnedLPAmount,
+    DaipriceChange,
+    setTxStatusForSwap,
+    AirDropAmount,
+    reverseStateMap,
+    getAirdropAmount,
+    supportedToken,
+    OutPutAmount,
+    CurrentCycleCount,
+    giveRewardForAirdrop,
+    CheckMintBalance,
+    getInputAmount,
+    TokenNames,
+    getOutPutAmount,
+    txStatusForAdding,
+    setTxStatusForAdding,
+    TimeLeftClaim,
+    renounceTokenContract,
+    tokenMap,
+    IsAuctionActive,
+    TokenRatio,
+    getTokenRatio,
+    pstateToPlsRatio,
+    auctionDuration,
+    auctionInterval,
+    reverseWindowActive,
+    todayTokenAddress,
+    todayTokenSymbol,
+    todayTokenName,
+    todayTokenDecimals,
+  }), [
+    // Only include values that actually change and need to trigger re-renders
+    // Stable references (functions wrapped in useCallback) don't need to be listed
+    provider,
+    signer,
+    loading,
+    address,
+    DexswappingStates,
+    UsersSupportedTokens,
+    TotalCost,
+    TokenBalance,
+    claiming,
+    userHashSwapped,
+    userHasReverseSwapped,
+    isCliamProcessing,
+    isTokenRenounce,
+    burnedAmount,
+    buttonTextStates,
+    DexbuttonTextStates,
+    DavAddress,
+    StateAddress,
+    StateBalance,
+    swappingStates,
+    TokenPariAddress,
+    AuctionTime,
+    auctionPhase,
+    auctionPhaseSeconds,
+    txStatusForSwap,
+    userHasBurned,
+    userReverseStep1,
+    userReverseStep2,
+    AirdropClaimed,
+    isReversed,
+    InputAmount,
+    burnedLPAmount,
+    DaipriceChange,
+    AirDropAmount,
+    reverseStateMap,
+    supportedToken,
+    OutPutAmount,
+    CurrentCycleCount,
+    TokenNames,
+    txStatusForAdding,
+    TimeLeftClaim,
+    tokenMap,
+    IsAuctionActive,
+    TokenRatio,
+    pstateToPlsRatio,
+    auctionDuration,
+    auctionInterval,
+    reverseWindowActive,
+    todayTokenAddress,
+    todayTokenSymbol,
+    todayTokenName,
+    todayTokenDecimals,
+  ]);
+
   return (
-    <SwapContractContext.Provider
-      value={{
-        //WALLET States
-        provider,
-        signer,
-        loading,
-        address,
-        handleDexTokenSwap,
-  performRatioSwap,
-  performReverseSwapStep1,
-  performReverseSwapStep2,
-        CalculationOfCost,
-        setDexSwappingStates,
-        DexswappingStates,
-        UsersSupportedTokens,
-        TotalCost,
-        isAirdropClaimed,
-        setClaiming,
-        TokenBalance,
-        claiming,
-        SwapTokens,
-        setDavAndStateIntoSwap,
-        handleAddToken,
-        // setReverseEnable,
-        userHashSwapped,
-        userHasReverseSwapped,
-        isCliamProcessing,
-        isTokenRenounce,
-        // WithdrawLPTokens,
-        AddTokenIntoSwapContract,
-        isTokenSupporteed,
-        burnedAmount,
-        buttonTextStates,
-        DexbuttonTextStates,
-        DavAddress,
-        StateAddress,
-        StateBalance,
-        swappingStates,
-        getStateTokenBalanceAndSave,
-        TokenPariAddress,
-  AuctionTime,
-  auctionPhase,
-  auctionPhaseSeconds,
-        txStatusForSwap,
-  userHasBurned,
-  userReverseStep1,
-  userReverseStep2,
-        fetchUserTokenAddresses,
-        AirdropClaimed,
-        isReversed,
-        InputAmount,
-        burnedLPAmount,
-        DaipriceChange,
-        setTxStatusForSwap,
-        AirDropAmount,
-  reverseStateMap,
-        getAirdropAmount,
-        supportedToken,
-        OutPutAmount,
-        CurrentCycleCount,
-        giveRewardForAirdrop,
-        CheckMintBalance,
-        getInputAmount,
-        TokenNames,
-        getOutPutAmount,
-        txStatusForAdding,
-        setTxStatusForAdding,
-        TimeLeftClaim,
-        renounceTokenContract,
-        tokenMap,
-        IsAuctionActive,
-        TokenRatio,
-        getTokenRatio,
-        pstateToPlsRatio,
-        auctionDuration,
-        auctionInterval,
-        // Reverse-flag for the current day (via SwapLens when available)
-        reverseWindowActive,
-        // Today's token data (centralized, no need for components to fetch independently)
-        todayTokenAddress,
-        todayTokenSymbol,
-        todayTokenName,
-        todayTokenDecimals,
-      }}
-    >
+    <SwapContractContext.Provider value={contextValue}>
       {children}
     </SwapContractContext.Provider>
   );

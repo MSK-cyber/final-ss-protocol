@@ -3,6 +3,8 @@ import { useState, useEffect, useContext, useRef } from "react";
 import { ethers } from "ethers";
 import { ContractContext } from "../../Functions/ContractInitialize";
 import { useAllTokens } from "./Tokens";
+import { getCachedContract } from "../../utils/contractCache";
+import { createSmartPoller } from "../../utils/smartPolling";
 import state from "../../assets/statelogo.png";
 import pulsechainLogo from "../../assets/pls1.png";
 import sonic from "../../assets/S_token.svg";
@@ -12,8 +14,9 @@ import useSwapData from "./useSwapData";
 // import toast from "react-hot-toast";
 import useTokenBalances from "./UserTokenBalances";
 import { TokensDetails } from "../../data/TokensDetails";
-import { useSwapContract } from "../../Functions/SwapContractFunctions";
 import { calculatePlsValueNumeric, validateInputAmount } from "../../Constants/Utils";
+// Optimized: Use Zustand store for static price data
+import { useTokenStore } from "../../stores";
 
 const SwapComponent = ({ preselectToken }) => {
   const { signer } = useContext(ContractContext);
@@ -63,7 +66,9 @@ const SwapComponent = ({ preselectToken }) => {
     tokenOut,
     TOKENS,
   });
-  const { pstateToPlsRatio, DaipriceChange } = useSwapContract();
+  // Optimized: Use store selectors for static price data
+  const pstateToPlsRatio = useTokenStore(state => state.pstateToPlsRatio);
+  const DaipriceChange = useTokenStore(state => state.DaipriceChange);
   const { tokens } = TokensDetails();
   const tokenBalances = useTokenBalances(TOKENS, signer);
 
@@ -133,17 +138,17 @@ const SwapComponent = ({ preselectToken }) => {
   };
 
   useEffect(() => {
-    // clear any existing timer
-    if (ratioTimerRef.current) {
-      clearInterval(ratioTimerRef.current);
-    }
-    // immediately fetch once
-    refreshRatio();
-    // then every 30s - reduced from 5s to prevent memory issues
-    ratioTimerRef.current = setInterval(refreshRatio, 30000);
-    return () => {
-      if (ratioTimerRef.current) clearInterval(ratioTimerRef.current);
-    };
+    // Smart polling for ratio: 10s active (swap needs fresh data), 30s idle
+    const poller = createSmartPoller(refreshRatio, {
+      activeInterval: 10000,   // 10s when user is active (swaps need fresh prices)
+      idleInterval: 30000,     // 30s when idle
+      fetchOnStart: true,      // Fetch immediately
+      fetchOnVisible: true,    // Refresh when tab becomes visible
+      name: 'swap-ratio'
+    });
+    
+    poller.start();
+    return () => poller.stop();
   }, [tokenIn, tokenOut, TOKENS]);
 
   const SPECIAL_TOKEN_LOGOS = {
@@ -157,7 +162,7 @@ const SwapComponent = ({ preselectToken }) => {
     setTxStatus("initiated")
     try {
       const tokenAddress = TOKENS[tokenIn].address;
-      const contract = new ethers.Contract(tokenAddress, ERC20_ABI, signer);
+      const contract = getCachedContract(tokenAddress, 'ERC20_APPROVAL', signer);
       let swapRouterAddress;
       if (chainId == 369) {
         swapRouterAddress = PULSEX_ROUTER_ADDRESS;
@@ -189,7 +194,7 @@ const SwapComponent = ({ preselectToken }) => {
     try {
       setTxStatus("Approving");
       const tokenAddress = TOKENS[tokenIn].address;
-      const contract = new ethers.Contract(tokenAddress, ERC20_ABI, signer);
+      const contract = getCachedContract(tokenAddress, 'ERC20_APPROVAL', signer);
       // Approve unlimited amount (max uint256
       const maxUint256 = BigInt("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
       let swapRouterAddress;
@@ -304,7 +309,7 @@ const SwapComponent = ({ preselectToken }) => {
 
       if (chainId === 369) {
         // ✅ PulseChain logic (PulseX Router)
-        const routerContract = new ethers.Contract(
+        const routerContract = getCachedContract(
           PULSEX_ROUTER_ADDRESS,
           PULSEX_ROUTER_ABI,
           signer

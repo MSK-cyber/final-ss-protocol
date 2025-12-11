@@ -1,5 +1,5 @@
 import { ethers } from "ethers";
-import { createContext, useEffect, useState } from "react";
+import { createContext, useEffect, useState, useMemo } from "react";
 // Import ABIs to re-instantiate contracts at resolved on-chain addresses (fresh)
 import DavTokenABI from "../ABI/DavToken.json";
 import StateTokenABI from "../ABI/StateToken.json";
@@ -178,7 +178,7 @@ export const ContractProvider = ({ children }) => {
   };
 
 
-  const contracts = {
+  const contracts = useMemo(() => ({
     state: AllContracts.stateContract,
     dav: AllContracts.davContract,
     Fluxin: AllContracts.FluxinContract,
@@ -190,19 +190,27 @@ export const ContractProvider = ({ children }) => {
     liquidityManager: AllContracts.liquidityManager,
     buyBurnController: AllContracts.buyBurnController,
     auctionMetrics: AllContracts.auctionMetrics,
-  airdropDistributor: AllContracts.airdropDistributor,
+    airdropDistributor: AllContracts.airdropDistributor,
     // Expose resolved addresses when available (ethers v6 Contract.target also works)
     addresses: {
       dav: AllContracts?._davAddress || AllContracts?.davContract?.target,
       state: AllContracts?._stateAddress || AllContracts?.stateContract?.target,
       airdropDistributor: AllContracts?._airdropDistributorAddress || AllContracts?.airdropDistributor?.target,
     },
-  };
+  }), [AllContracts]);
+
+  // Memoize context value to prevent unnecessary re-renders
+  const contextValue = useMemo(() => ({
+    loading,
+    provider,
+    signer,
+    account,
+    AllContracts,
+    contracts,
+  }), [loading, provider, signer, account, AllContracts, contracts]);
 
   return (
-    <ContractContext.Provider
-      value={{ loading, provider, signer, account, AllContracts, contracts }}
-    >
+    <ContractContext.Provider value={contextValue}>
       {children}
     </ContractContext.Provider>
   );

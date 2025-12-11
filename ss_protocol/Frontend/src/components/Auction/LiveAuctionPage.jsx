@@ -15,9 +15,13 @@ const LiveAuctionPage = () => {
     const active = parseFloat(davHolds || "0");
     const expired = parseFloat(davExpireHolds || "0");
     const total = parseFloat(davGovernanceHolds || "0");
+    
+    // Check if we have cached DAV data (non-default values)
+    const hasCachedData = active > 0 || expired > 0 || total > 0;
 
     if (!isConnected || !address) return "no-wallet";
-    if (isLoading) return "loading";
+    // Only show loading if no cached data available
+    if (isLoading && !hasCachedData) return "loading";
 
     // Bypass DAV requirement for allowlisted wallet(s)
     if (isBypassedAddress(address)) return "ok";
@@ -42,10 +46,10 @@ const LiveAuctionPage = () => {
     if (status === "loading") {
       return (
         <div className="text-center my-5">
-          <div className="spinner-border" role="status">
+          <div className="spinner-border text-light" role="status">
             <span className="visually-hidden">Loading...</span>
           </div>
-          <p className="mt-3 text-muted">Checking your DAV eligibility…</p>
+          <p className="mt-3 text-light">Checking your DAV eligibility…</p>
         </div>
       );
     }

@@ -2,6 +2,7 @@ import { useContext, useEffect, useState, useRef } from "react";
 import { ethers } from "ethers";
 import { useAccount } from "wagmi";
 import { ContractContext } from "../../Functions/ContractInitialize";
+import { getCachedContract } from "../../utils/contractCache";
 
 /**
  * Fetch user balances for all supported tokens.
@@ -55,9 +56,9 @@ const useTokenBalances = (TOKENS, signer) => {
             return { symbol, balance: "0" };
           }
 
-          const contract = new ethers.Contract(
+          const contract = getCachedContract(
             token.address,
-            ["function balanceOf(address) view returns (uint256)"],
+            'ERC20_APPROVAL',
             readProvider
           );
           const bal = await contract.balanceOf(address);

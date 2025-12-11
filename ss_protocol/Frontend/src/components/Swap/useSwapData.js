@@ -6,6 +6,7 @@ import { ContractContext } from "../../Functions/ContractInitialize";
 import { useChainId } from 'wagmi';
 import { PULSEX_ROUTER_ADDRESS, PULSEX_ROUTER_ABI, PULSEX_FACTORY_ABI, WPLS_ADDRESS } from '../../Constants/Constants';
 import { geckoTokenApiUrl } from "../../Constants/ExternalLinks";
+import { getCachedContract, COMMON_ABIS } from "../../utils/contractCache";
 
 const useSwapData = ({ amountIn, tokenIn, tokenOut, TOKENS }) => {
 	const chainId = useChainId();
@@ -36,9 +37,9 @@ const useSwapData = ({ amountIn, tokenIn, tokenOut, TOKENS }) => {
 		try {
 
 			const tokenAddress = TOKENS[tokenSymbol].address;
-			const contract = new ethers.Contract(
+			const contract = getCachedContract(
 				tokenAddress,
-				["function balanceOf(address) view returns (uint256)"],
+				COMMON_ABIS.ERC20_APPROVAL, // Use ERC20_APPROVAL which includes balanceOf
 				signer
 			);
 			const bal = await contract.balanceOf(address);
@@ -74,7 +75,7 @@ const useSwapData = ({ amountIn, tokenIn, tokenOut, TOKENS }) => {
 			if (chainId === 369) {
 				const path = [tokenInAddress, tokenOutAddress];
 
-				const routerContract = new ethers.Contract(
+				const routerContract = getCachedContract(
 					PULSEX_ROUTER_ADDRESS,
 					PULSEX_ROUTER_ABI,
 					signer.provider
@@ -89,7 +90,7 @@ const useSwapData = ({ amountIn, tokenIn, tokenOut, TOKENS }) => {
 
 				// Get factory + pair
 				const factoryAddress = await routerContract.factory();
-				const factoryContract = new ethers.Contract(
+				const factoryContract = getCachedContract(
 					factoryAddress,
 					PULSEX_FACTORY_ABI,
 					signer.provider
@@ -152,7 +153,7 @@ const useSwapData = ({ amountIn, tokenIn, tokenOut, TOKENS }) => {
 	};
 
 	const getQuoteDirect = async (amount, tokenIn, tokenOut) => {
-		const routerContract = new ethers.Contract(
+		const routerContract = getCachedContract(
 			PULSEX_ROUTER_ADDRESS,
 			PULSEX_ROUTER_ABI,
 			signer.provider

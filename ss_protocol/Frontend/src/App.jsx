@@ -22,10 +22,30 @@ import SwapComponent from "./components/Swap/SwapModel";
 import AdminLayout from "./components/admin/AdminLayout";
 import DiagnosticsPage from "./pages/DiagnosticsPage";
 import { useGovernanceGate } from "./components/admin/useGovernanceGate";
+import { startMemoryMonitor, performMemoryCleanup } from "./utils/memoryCleanup";
 
 const App = () => {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const { isGovernance, loading: govLoading } = useGovernanceGate();
+
+  // Memory monitoring and cleanup
+  useEffect(() => {
+    // Start memory monitor (warns at 500MB)
+    const stopMonitor = startMemoryMonitor(500);
+    
+    // Cleanup on visibility change (when tab goes to background)
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        performMemoryCleanup();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    return () => {
+      if (stopMonitor) stopMonitor();
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, []);
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);

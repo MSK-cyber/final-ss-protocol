@@ -1,4 +1,4 @@
-import { useState, useEffect, useContext } from "react";
+import { useState, useEffect, useContext, useMemo, useRef } from "react";
 import { getDAVContractAddress, getSTATEContractAddress } from "../Constants/ContractAddresses";
 import { useSwapContract } from "../Functions/SwapContractFunctions";
 import { useDAvContract } from "../Functions/DavTokenFunctions";
@@ -8,11 +8,15 @@ import { ethers } from "ethers";
 import { useStatePoolAddress } from "../Functions/useStatePoolAddress";
 import { generateIdenticon } from "../utils/identicon";
 import { isImageUrl } from "../Constants/Constants";
+import { getCachedContract } from "../utils/contractCache";
+import { createSmartPoller } from "../utils/smartPolling";
 
 export const shortenAddress = (addr) => (addr ? `${addr.slice(0, 6)}...${addr.slice(-6)}` : "");
 
 export const TokensDetails = () => {
+  // Use context directly for reliable immediate data access
   const swap = useSwapContract();
+  
   const { Emojies, names } = useDAvContract();
   const chainId = useChainId();
   const { AllContracts } = useContext(ContractContext);
@@ -25,16 +29,19 @@ export const TokensDetails = () => {
   const getDavAddress = () => getDAVContractAddress(chainId);
   const getStateAddress = () => getSTATEContractAddress(chainId);
 
-  // On-chain name->emoji mapping
-  const nameToEmoji = Array.isArray(names) && Array.isArray(Emojies) && names.length === Emojies.length
-    ? names.reduce((acc, n, i) => { acc[n.toLowerCase()] = Emojies[i] || "🔹"; return acc; }, {})
-    : {};
+  // On-chain name->emoji mapping - memoized
+  const nameToEmoji = useMemo(() => {
+    if (!Array.isArray(names) || !Array.isArray(Emojies) || names.length !== Emojies.length) {
+      return {};
+    }
+    return names.reduce((acc, n, i) => { acc[n.toLowerCase()] = Emojies[i] || "🔹"; return acc; }, {});
+  }, [names, Emojies]);
 
-  // Static tokens
-  const staticTokens = [
+  // Static tokens - memoized to maintain stable reference
+  const staticTokens = useMemo(() => [
     { name: "DAV", key: "DAV", displayName: "DAV", address: getDavAddress(), price: 0 },
     { name: "STATE", key: "state", displayName: "STATE", address: getStateAddress(), price: 0, pairAddress: buyBurnStatePool },
-  ];
+  ], [chainId, buyBurnStatePool]);
 
   // Fix the fetchDeployed function to properly fetch tokens after buy & burn
   useEffect(() => {
@@ -61,10 +68,7 @@ export const TokensDetails = () => {
         
         const detailPromises = validAddresses.map(async (tokenAddress) => {
           try {
-            const tokenContract = new ethers.Contract(tokenAddress, [
-              'function name() view returns (string)',
-              'function symbol() view returns (string)'
-            ], AllContracts.AuctionContract.runner || AllContracts.AuctionContract.provider);
+            const tokenContract = getCachedContract(tokenAddress, 'ERC20_META', AllContracts.AuctionContract.runner || AllContracts.AuctionContract.provider);
             
             const [tokenName, tokenSymbol, pairAddress] = await Promise.all([
               tokenContract.name().catch(() => 'Unknown'),
@@ -97,20 +101,39 @@ export const TokensDetails = () => {
 
     fetchDeployed();
     
-    // Refresh less frequently - every 60 seconds instead of 30
-    const interval = setInterval(fetchDeployed, 60000);
-    return () => clearInterval(interval);
+    // Smart polling for deployed tokens: 30s active, 120s idle
+    const poller = createSmartPoller(fetchDeployed, {
+      activeInterval: 30000,   // 30s when user is active
+      idleInterval: 120000,    // 2 minutes when idle (tokens don't change often)
+      fetchOnStart: false,     // Already fetched above
+      fetchOnVisible: true,    // Refresh when tab becomes visible
+      name: 'deployed-tokens'
+    });
+    
+    poller.start();
+    return () => poller.stop();
   }, [AllContracts?.AuctionContract]);
 
-  // Dynamic tokens from swap
-  const dynamicTokens = Array.from(swap.TokenNames || [])
-    .filter((n) => n !== 'DAV' && n !== 'STATE')
-    .map((name) => {
-      const address = swap.tokenMap?.[name] || ethers.ZeroAddress;
-      const mapped = nameToEmoji[name.toLowerCase()];
-      const emoji = isImageUrl(mapped) ? mapped : generateIdenticon(address);
-      return { name, key: name, address, price: 0, emoji };
-    });
+  // Dynamic tokens from swap - memoized to prevent recreation on every render
+  const dynamicTokens = useMemo(() => {
+    return Array.from(swap.TokenNames || [])
+      .filter((n) => n !== 'DAV' && n !== 'STATE')
+      .map((name) => {
+        const address = swap.tokenMap?.[name] || ethers.ZeroAddress;
+        const mapped = nameToEmoji[name.toLowerCase()];
+        const emoji = isImageUrl(mapped) ? mapped : generateIdenticon(address);
+        return { name, key: name, address, price: 0, emoji };
+      });
+  }, [swap.TokenNames, swap.tokenMap, nameToEmoji]);
+
+  // Stable reference to dynamic token addresses for dependency tracking
+  const dynamicTokenAddrsRef = useRef('');
+  const currentDynamicAddrs = dynamicTokens.map(t => (t.address || '').toLowerCase()).filter(a => a && a !== ethers.ZeroAddress.toLowerCase()).sort().join(',');
+  
+  // Only update ref if addresses actually changed
+  if (dynamicTokenAddrsRef.current !== currentDynamicAddrs) {
+    dynamicTokenAddrsRef.current = currentDynamicAddrs;
+  }
 
   // Fetch and cache ERC20 names for dynamic tokens
   useEffect(() => {
@@ -119,11 +142,11 @@ export const TokensDetails = () => {
       try {
         const provider = AllContracts?.AuctionContract?.runner || AllContracts?.provider;
         if (!provider) return;
-        const addrs = dynamicTokens.map(t => (t.address || '').toLowerCase()).filter(a => a && a !== ethers.ZeroAddress.toLowerCase());
+        const addrs = dynamicTokenAddrsRef.current.split(',').filter(Boolean);
         for (const addr of addrs) {
           if (nameMap[addr]) continue;
           try {
-            const erc20 = new ethers.Contract(addr, ['function name() view returns (string)'], provider);
+            const erc20 = getCachedContract(addr, 'ERC20_NAME', provider);
             const nm = await erc20.name();
             if (!cancelled && nm) setNameMap(prev => ({ ...prev, [addr]: nm }));
           } catch {}
@@ -131,20 +154,22 @@ export const TokensDetails = () => {
       } catch {}
     })();
     return () => { cancelled = true; };
-  }, [AllContracts?.AuctionContract, JSON.stringify(dynamicTokens.map(t => t.address))]);
+  }, [AllContracts?.AuctionContract, currentDynamicAddrs]);
 
-  // Combine and dedupe (prefer earlier entries)
+  // Combine and dedupe (prefer earlier entries) - memoized to prevent recreation on every render
   // Place deployedTokens BEFORE dynamicTokens so deployed entries take precedence
-  const combined = [...staticTokens, ...deployedTokens, ...dynamicTokens];
-  const seen = new Set();
-  const data = combined.filter(t => {
-    const addr = (t.address || '').toLowerCase();
-    const sym = (t.name || t.key || '').toLowerCase();
-    const k = addr ? `addr:${addr}` : `sym:${sym}`;
-    if (seen.has(k)) return false;
-    seen.add(k);
-    return true;
-  });
+  const data = useMemo(() => {
+    const combined = [...staticTokens, ...deployedTokens, ...dynamicTokens];
+    const seen = new Set();
+    return combined.filter(t => {
+      const addr = (t.address || '').toLowerCase();
+      const sym = (t.name || t.key || '').toLowerCase();
+      const k = addr ? `addr:${addr}` : `sym:${sym}`;
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+  }, [staticTokens, deployedTokens, dynamicTokens]);
 
   let tokens = data.map((token) => {
     const key = token.key;

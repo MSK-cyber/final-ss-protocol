@@ -21,6 +21,9 @@ import { useAllTokens } from "../Swap/Tokens";
 import { ContractContext } from "../../Functions/ContractInitialize";
 import { notifyError, PULSEX_ROUTER_ADDRESS, PULSEX_ROUTER_ABI } from "../../Constants/Constants";
 import { calculatePlsValueNumeric, formatNumber, formatWithCommas, calculateAmmPlsValueNumeric, calculateStateAmmPlsValueNumeric } from "../../Constants/Utils";
+import { getCachedContract } from "../../utils/contractCache";
+// Optimized: Use Zustand stores for selective subscriptions
+import { useTokenStore } from "../../stores";
 
 const AuctionSection = () => {
     const chainId = useChainId();
@@ -54,7 +57,10 @@ const AuctionSection = () => {
         roiClientRequiredPls,
         roiClientMeets,
     } = useDAvContract();
-    const { CalculationOfCost, TotalCost, getAirdropAmount, getInputAmount, getOutPutAmount, pstateToPlsRatio, DaipriceChange } = useSwapContract();
+    const { CalculationOfCost, TotalCost, getAirdropAmount, getInputAmount, getOutPutAmount } = useSwapContract();
+    // Optimized: Use store for static price data
+    const pstateToPlsRatio = useTokenStore(state => state.pstateToPlsRatio);
+    const DaipriceChange = useTokenStore(state => state.DaipriceChange);
     const [amount, setAmount] = useState("");
     const [Refferalamount, setReferralAmount] = useState("");
     const [load, setLoad] = useState(false);
@@ -68,7 +74,7 @@ const AuctionSection = () => {
     const routerContract = useMemo(() => {
         if (!signer || chainId !== 369) return null;
         try {
-            return new ethers.Contract(
+            return getCachedContract(
                 PULSEX_ROUTER_ADDRESS,
                 PULSEX_ROUTER_ABI,
                 signer.provider
@@ -358,11 +364,11 @@ const AuctionSection = () => {
                                     <div className="d-flex">
                                         <h5>
                                             {isGov ? (
-                                                <>{isLoading ? <DotAnimation /> : davGovernanceHolds}</>
+                                                <>{(isLoading && davGovernanceHolds === "0.0") ? <DotAnimation /> : davGovernanceHolds}</>
                                             ) : (
-                                                <>{isLoading ? <DotAnimation /> : davHolds}</>
+                                                <>{(isLoading && davHolds === "0.0") ? <DotAnimation /> : davHolds}</>
                                             )}{" "}
-                                            / {isLoading ? (
+                                            / {(isLoading && davExpireHolds === "0.0") ? (
                                                 <DotAnimation />
                                             ) : (
                                                 // Governance DAV never expires: display 0 expired for governance wallet
@@ -435,7 +441,7 @@ const AuctionSection = () => {
                                     <p className="mb-1">
                                         <span className="detailText">ROI / {nativeSymbol} -</span>
                                         <span className="ms-1 second-span-fontsize">
-                                            {isLoading ? (
+                                            {(isLoading && requiredPlsValue === 0 && estimatedPlsValue === 0) ? (
                                                 <DotAnimation />
                                             ) : (
                                                 <>
@@ -450,7 +456,7 @@ const AuctionSection = () => {
                                     <p className="mb-1">
                                         <span className="detailText">USER ROI % -</span>
                                         <span className="ms-1 second-span-fontsize" style={{ color: roiPctDisplay >= 100 ? '#28a745' : '#ff4081' }}>
-                                            {isLoading ? <DotAnimation /> : formatWithCommas(roiPctDisplay)} %
+                                            {(isLoading && roiPctDisplay === '0') ? <DotAnimation /> : formatWithCommas(roiPctDisplay)} %
                                         </span>
                                     </p>
 

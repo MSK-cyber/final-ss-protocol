@@ -5,6 +5,7 @@ import { useSwapContract } from "../Functions/SwapContractFunctions";
 import { useDAvContract } from "../Functions/DavTokenFunctions";
 
 export const useAuctionTokens = () => {
+	// Use context directly for reliable immediate data access
 	const {
 		SwapTokens,
 		isReversed,

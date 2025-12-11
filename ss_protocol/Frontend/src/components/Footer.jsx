@@ -4,7 +4,8 @@ import "../Styles/Header.css";
 import { FaXTwitter } from "react-icons/fa6";
 import { useEffect, useState, useContext } from "react";
 import { useLocation } from "react-router-dom";
-import { useSwapContract } from "../Functions/SwapContractFunctions";
+import { useAuctionData } from "../hooks/useSelectiveState";
+import { useTokenStore } from "../stores";
 import { formatCountdown } from "../Constants/Utils";
 // import { formatDuration } from "../utils/auctionTiming";
 import { ContractContext } from "../Functions/ContractInitialize";
@@ -13,17 +14,16 @@ import ContractsModal from "./ContractsModal";
 
 const Footer = () => {
   const location = useLocation();
-  // Guard against undefined context during early render
-  const swapCtx = useSwapContract() || {};
+  // Use lightweight selector hook instead of full context (reduces re-renders)
   const { 
-    AuctionTime = {}, 
-    IsAuctionActive = {}, 
-    isReversed = {}, 
+    auctionTime: AuctionTime = {}, 
     auctionPhase, 
     auctionPhaseSeconds = 0,
-    auctionPhaseEndAt,
-    todayTokenAddress, // Use centralized today's token address from context
-  } = swapCtx;
+    todayTokenAddress,
+  } = useAuctionData();
+  // Get specific token data from store
+  const IsAuctionActive = useTokenStore(state => state.isAuctionActive) || {};
+  const isReversed = useTokenStore(state => state.isReversed) || {};
   const { AllContracts } = useContext(ContractContext);
   // We now rely exclusively on chain-anchored auctionPhaseSeconds from context for accuracy
   // Remove per-token fallback to avoid key mismatches or duplicated entries

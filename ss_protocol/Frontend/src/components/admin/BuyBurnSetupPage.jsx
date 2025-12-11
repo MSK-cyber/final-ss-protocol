@@ -15,6 +15,7 @@ export default function BuyBurnSetupPage() {
   const chainId = useChainId();
   const TOKENS = useAllTokens();
   const { BuyAndBurnController, AuctionContract, signer } = useContractContext();
+  // Optimized: Keep only the function from context (doesn't cause re-renders)
   const { getStateTokenBalanceAndSave } = useSwapContract();
   const [activeStep, setActiveStep] = useState(2);
   const [stateOutPlsValue, setStateOutPlsValue] = useState(null);

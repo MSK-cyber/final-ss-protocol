@@ -21,8 +21,58 @@ import toast from "react-hot-toast";
 import { ERC20_ABI, notifyError, notifySuccess } from "../Constants/Constants";
 import { getRuntimeConfigSync } from "../Constants/RuntimeConfig";
 import { truncateDecimals } from "../Constants/Utils";
+import { getCachedContract, COMMON_ABIS } from "../utils/contractCache";
+import { createSmartPoller } from "../utils/smartPolling";
+// Zustand stores for optimized state management
+import { useUserStore } from "../stores";
 
 export const DAVContext = createContext();
+
+// Session storage cache for instant DAV data on page refresh
+const DAV_CACHE_KEY = 'dav_page_cache';
+const CACHE_EXPIRY_MS = 5 * 60 * 1000; // 5 minutes
+
+const getDavCache = (address, chainId) => {
+  try {
+    const cacheKey = `${DAV_CACHE_KEY}_${chainId}_${address?.toLowerCase()}`;
+    const cached = sessionStorage.getItem(cacheKey);
+    if (!cached) return null;
+    const { data, timestamp } = JSON.parse(cached);
+    // Check if cache is expired
+    if (Date.now() - timestamp > CACHE_EXPIRY_MS) {
+      sessionStorage.removeItem(cacheKey);
+      return null;
+    }
+    return data;
+  } catch {
+    return null;
+  }
+};
+
+const setDavCache = (address, chainId, data) => {
+  try {
+    const cacheKey = `${DAV_CACHE_KEY}_${chainId}_${address?.toLowerCase()}`;
+    const cacheData = {
+      data: {
+        davHolds: data.davHolds,
+        davExpireHolds: data.davExpireHolds,
+        davGovernanceHolds: data.davGovernanceHolds,
+        roiTotalValuePls: data.roiTotalValuePls,
+        roiRequiredValuePls: data.roiRequiredValuePls,
+        roiMeets: data.roiMeets,
+        roiPercentage: data.roiPercentage,
+        stateHolding: data.stateHolding,
+        ReferralAMount: data.ReferralAMount,
+        claimableAmount: data.claimableAmount,
+        totalInvestedPls: data.totalInvestedPls,
+      },
+      timestamp: Date.now()
+    };
+    sessionStorage.setItem(cacheKey, JSON.stringify(cacheData));
+  } catch {
+    // Ignore storage errors
+  }
+};
 
 export const DavProvider = ({ children }) => {
   const { AllContracts, signer, provider } = useContext(ContractContext);
@@ -47,42 +97,60 @@ export const DavProvider = ({ children }) => {
   const [isClaiming, setisClaiming] = useState(null);
   const [isProcessingToken, setProcessToken] = useState(false);
 
-  const [data, setData] = useState({
-    Supply: "0.0",
-    stateHolding: "0.0",
-    ReferralCodeOfUser: "0.0",
-    ReferralAMount: "0.0",
-    totalStateBurned: "0.0",
-    TokenProcessing: "0.0",
-    DavMintFee: "0.0",
-    pendingToken: "0.0",
-    claimableAmount: "0.0",
-    currentBurnCycle: "0.0",
-    userBurnedAmountInCycle: "0.0",
-    usableTreasury: "0.0",
-    tokenEntries: null,
-    expectedClaim: "0.0",
-    CanClaimNow: "false",
-    claimableAmountForBurn: "0.0",
-    UserPercentage: "0.0",
-    TimeUntilNextClaim: "0.0",
-    AllUserPercentage: "0.0",
-    stateHoldingOfSwapContract: "0.0",
-    ContractPls: "0.0",
-    davHolds: "0.0",
-    davExpireHolds: "0.0",
-    totalInvestedPls: "0.0",
-    // On-chain ROI fields from DAV.getROI(user)
-    roiTotalValuePls: "0.0",   // totalValueInPLS (wei -> 18dp formatted)
-    roiRequiredValuePls: "0.0", // requiredValue (wei -> 18dp formatted)
-    roiMeets: "false",          // meetsROI (bool -> string)
-    roiPercentage: "0",         // roiPercentage (plain integer, no decimals on-chain)
-    // Client-side ROI (mirrors on-chain formula)
-    roiClientTotalPls: "0.0",
-    roiClientRequiredPls: "0.0",
-    roiClientMeets: "false",
-    roiClientPercentage: "0",
-  });
+  // Initialize data with cached values for instant display on refresh
+  const getInitialData = () => {
+    const defaults = {
+      Supply: "0.0",
+      stateHolding: "0.0",
+      ReferralCodeOfUser: "0.0",
+      ReferralAMount: "0.0",
+      totalStateBurned: "0.0",
+      TokenProcessing: "0.0",
+      DavMintFee: "0.0",
+      pendingToken: "0.0",
+      claimableAmount: "0.0",
+      currentBurnCycle: "0.0",
+      userBurnedAmountInCycle: "0.0",
+      usableTreasury: "0.0",
+      tokenEntries: null,
+      expectedClaim: "0.0",
+      CanClaimNow: "false",
+      claimableAmountForBurn: "0.0",
+      UserPercentage: "0.0",
+      TimeUntilNextClaim: "0.0",
+      AllUserPercentage: "0.0",
+      stateHoldingOfSwapContract: "0.0",
+      ContractPls: "0.0",
+      davHolds: "0.0",
+      davExpireHolds: "0.0",
+      totalInvestedPls: "0.0",
+      // On-chain ROI fields from DAV.getROI(user)
+      roiTotalValuePls: "0.0",   // totalValueInPLS (wei -> 18dp formatted)
+      roiRequiredValuePls: "0.0", // requiredValue (wei -> 18dp formatted)
+      roiMeets: "false",          // meetsROI (bool -> string)
+      roiPercentage: "0",         // roiPercentage (plain integer, no decimals on-chain)
+      // Client-side ROI (mirrors on-chain formula)
+      roiClientTotalPls: "0.0",
+      roiClientRequiredPls: "0.0",
+      roiClientMeets: "false",
+      roiClientPercentage: "0",
+    };
+    return defaults;
+  };
+
+  const [data, setData] = useState(getInitialData);
+  
+  // Load cached data on mount for instant display
+  useEffect(() => {
+    if (address && chainId) {
+      const cached = getDavCache(address, chainId);
+      if (cached) {
+        setData(prev => ({ ...prev, ...cached }));
+        // Show cached data immediately, but keep loading for fresh data
+        console.log('📦 Loaded DAV data from cache for instant display');
+      }
+    }
+  }, [address, chainId]);
 
   // Prefer read-only provider for ALL read calls to avoid wallet chain/provider flakiness
   // Keep write calls using the signer-bound instances
@@ -390,15 +458,14 @@ export const DavProvider = ({ children }) => {
             const validTokens = tokenAddrs.filter(addr => addr && addr !== ethers.ZeroAddress);
             for (const tokenAddr of validTokens) {
               try {
-                const tokenCtr = new ethers.Contract(tokenAddr, ERC20_ABI, (provider || AllContracts.AuctionContract.runner));
+                const tokenCtr = getCachedContract(tokenAddr, 'ERC20_APPROVAL', (provider || AllContracts.AuctionContract.runner));
                 const userBal = await tokenCtr.balanceOf(address).catch(() => 0n);
                 if ((userBal ?? 0n) > 0n) {
                   const ratio = await AllContracts.AuctionContract.getRatioPrice(tokenAddr).catch(() => 0n);
                   if ((ratio ?? 0n) > 0n) {
                     let decimals = 18;
                     try {
-                      const DEC_ABI = ['function decimals() view returns (uint8)'];
-                      const decCtr = new ethers.Contract(tokenAddr, DEC_ABI, (provider || AllContracts.AuctionContract.runner));
+                      const decCtr = getCachedContract(tokenAddr, 'ERC20_APPROVAL', (provider || AllContracts.AuctionContract.runner));
                       decimals = Number(await decCtr.decimals());
                     } catch {}
                     const denom = BigInt(10) ** BigInt(Number.isFinite(decimals) && decimals >= 0 ? decimals : 18);
@@ -440,14 +507,10 @@ export const DavProvider = ({ children }) => {
           } catch {}
 
           if (poolAddr && poolAddr !== ethers.ZeroAddress && totalStateValue > 0n) {
-            const PAIR_ABI = [
-              'function getReserves() view returns (uint112,uint112,uint32)',
-              'function token0() view returns (address)'
-            ];
             let reserveState = 0n, reserveWpls = 0n;
             // Try direct pair reserves first
             try {
-              const pair = new ethers.Contract(poolAddr, PAIR_ABI, (provider || AllContracts?.buyBurnController?.runner || AllContracts?.AuctionContract?.runner));
+              const pair = getCachedContract(poolAddr, 'PAIR', (provider || AllContracts?.buyBurnController?.runner || AllContracts?.AuctionContract?.runner));
               const [r0, r1] = await pair.getReserves();
               const token0 = await pair.token0();
               const r0n = BigInt(r0);
@@ -532,6 +595,16 @@ export const DavProvider = ({ children }) => {
       console.error("Error fetching contract data:", error);
     } finally {
       setLoading(false);
+      // Cache the fetched data for instant display on next page refresh
+      if (address && chainId) {
+        // Use setTimeout to ensure state is updated before caching
+        setTimeout(() => {
+          setData(currentData => {
+            setDavCache(address, chainId, currentData);
+            return currentData;
+          });
+        }, 100);
+      }
     }
   }, [AllContracts, address, chainId]);
 
@@ -606,9 +679,7 @@ export const DavProvider = ({ children }) => {
                 if (!tokenAddress || tokenAddress === ethers.ZeroAddress) continue;
                 
                 // Get token name and check if it matches
-                const tokenContract = new ethers.Contract(tokenAddress, [
-                  'function name() view returns (string)'
-                ], (provider || AllContracts?.AuctionContract?.runner));
+                const tokenContract = getCachedContract(tokenAddress, 'ERC20_NAME', (provider || AllContracts?.AuctionContract?.runner));
                 
                 const tokenName = await tokenContract.name().catch(() => '');
                 if (tokenName.toLowerCase() === name.toLowerCase()) {
@@ -661,59 +732,60 @@ export const DavProvider = ({ children }) => {
             : Promise.resolve(0n)
         )),
       ]);
+      // Update cache after background refresh
+      if (address && chainId) {
+        setTimeout(() => {
+          setData(currentData => {
+            setDavCache(address, chainId, currentData);
+            return currentData;
+          });
+        }, 100);
+      }
     } catch (error) {
       console.error("Error fetching DAV balances:", error);
     }
-  }, [AllContracts, address]);
+  }, [AllContracts, address, chainId]);
 
+  // Consolidated background refresh - smart polling with active/idle detection
+  // Fast updates (15s) when user is active, slow updates (60s) when idle
+  // Pauses completely when tab is hidden to save resources
   useEffect(() => {
-    if (!AllContracts?.davContract || !address) return;
+    if (!AllContracts?.davContract) return;
 
-    // REMOVED block-based refresh - it was causing memory leaks by firing every 2-3 seconds
-    // Block listeners on PulseChain fire too frequently and cause excessive RPC calls
-    // Instead, we rely on the periodic interval below which is much safer
+    const runBackgroundRefresh = async () => {
+      try {
+        // Fetch all periodic data in parallel where possible
+        await Promise.all([
+          fetchTimeUntilNextClaim(),
+          fetchAndStoreTokenEntries(),
+          // Only check deployment status if we have names
+          (names && names.length > 0 && AllContracts?.AuctionContract) 
+            ? isTokenDeployed() 
+            : Promise.resolve()
+        ]);
+      } catch (e) {
+        console.debug('Background refresh error:', e);
+      }
+    };
 
-    // Lightweight periodic keepalive - this is the only polling mechanism now
-    const interval = setInterval(() => {
-      fetchTimeUntilNextClaim();
-      fetchAndStoreTokenEntries();
-    }, 60000); // every 60s - reduced from 15s to prevent memory issues
+    // Smart polling: 15s active, 60s idle, pauses when hidden
+    const poller = createSmartPoller(runBackgroundRefresh, {
+      activeInterval: 15000,  // 15s when user is active
+      idleInterval: 60000,    // 60s when user is idle
+      fetchOnStart: !!address, // Only fetch on start if we have an address
+      fetchOnVisible: true,   // Refresh when tab becomes visible
+      name: 'dav-background'
+    });
 
-    // Initial fetch
-    fetchTimeUntilNextClaim();
+    poller.start();
 
     return () => {
-      clearInterval(interval);
+      poller.stop();
     };
-  }, [fetchTimeUntilNextClaim, AllContracts?.davContract, address]);
+  }, [fetchTimeUntilNextClaim, AllContracts?.davContract, AllContracts?.AuctionContract, address, names]);
 
-  // Revalidate on window focus/visibility gain to recover from background throttling
-  useEffect(() => {
-    const onFocus = () => {
-      fetchData();
-      fetchTimeUntilNextClaim();
-    };
-    const onVisibility = () => {
-      if (document.visibilityState === 'visible') onFocus();
-    };
-    window.addEventListener('focus', onFocus);
-    document.addEventListener('visibilitychange', onVisibility);
-    return () => {
-      window.removeEventListener('focus', onFocus);
-      document.removeEventListener('visibilitychange', onVisibility);
-    };
-  }, [fetchData, fetchTimeUntilNextClaim]);
-
-  // Separate interval for deployment status with longer frequency to prevent flickering
-  useEffect(() => {
-    if (!AllContracts?.AuctionContract || !names || names.length === 0) return;
-
-    const deploymentInterval = setInterval(() => {
-      isTokenDeployed();
-    }, 60000); // Check deployment status every 60s - reduced from 10s to prevent memory issues
-
-    return () => clearInterval(deploymentInterval);
-  }, [names, AllContracts?.AuctionContract]);
+  // Note: Visibility handling is now built into smart polling
+  // The poller automatically pauses when hidden and resumes when visible
 
   useEffect(() => {
     if (data.TimeUntilNextClaim === 0) {
@@ -1159,9 +1231,9 @@ export const DavProvider = ({ children }) => {
 
   const DepositStateBack = async (TokenAddress) => {
     try {
-      const tokenContract = new ethers.Contract(
+      const tokenContract = getCachedContract(
         getStateAddress(),
-        ERC20_ABI,
+        'ERC20_APPROVAL',
         signer
       );
       const weiAmount = ethers.parseUnits("500000000".toString(), 18);
@@ -1186,9 +1258,9 @@ export const DavProvider = ({ children }) => {
       setClicked(true);
       const weiAmount = ethers.parseUnits(amount.toString(), 18);
       const maxUint256 = BigInt("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
-      const tokenContract = new ethers.Contract(
+      const tokenContract = getCachedContract(
         getStateAddress(),
-        ERC20_ABI,
+        'ERC20_APPROVAL',
         signer
       );
       const allowance = await tokenContract.allowance(address, getDavAddress());
@@ -1236,36 +1308,71 @@ export const DavProvider = ({ children }) => {
     children: PropTypes.node.isRequired,
   };
 
+  // ============ ZUSTAND STORE SYNC ============
+  // Sync DAV data to Zustand stores for gradual migration
+  const setUserBatch = useUserStore(state => state.setBatch);
+  
+  useEffect(() => {
+    setUserBatch({
+      davBalance: data.Supply,
+      davHolds: data.davHolds,
+      davExpireHolds: data.davExpireHolds,
+      stateHolding: data.stateHolding,
+      claimableAmount: data.claimableAmount,
+      claimableAmountForBurn: data.claimableAmountForBurn,
+      totalStateBurned: data.totalStateBurned,
+      roiPercentage: data.roiPercentage,
+      roiMeets: data.roiMeets,
+      totalInvestedPls: data.totalInvestedPls,
+    });
+  }, [data.Supply, data.davHolds, data.davExpireHolds, data.stateHolding, data.claimableAmount, data.claimableAmountForBurn, data.totalStateBurned, data.roiPercentage, data.roiMeets, data.totalInvestedPls, setUserBatch]);
+
+  // Memoize context value to prevent unnecessary re-renders
+  const contextValue = useMemo(() => ({
+    ...data,
+    isLoading,
+    BurnClicked,
+    Claiming,
+    mintDAV,
+    BurnStateTokens,
+    claimAmount,
+    isClaiming,
+    claimBurnAmount,
+    AddYourToken,
+    buttonTextStates,
+    fetchData,
+    fetchStateHolding,
+    deployWithMetaMask,
+    DepositStateBack,
+    users,
+    isProcessingToken,
+    setProcessToken,
+    names,
+    Emojies,
+    TokenStatus,
+    isProcessing,
+    txStatus,
+    setTxStatus,
+    isUsed,
+  }), [
+    data,
+    isLoading,
+    BurnClicked,
+    Claiming,
+    isClaiming,
+    buttonTextStates,
+    users,
+    isProcessingToken,
+    names,
+    Emojies,
+    TokenStatus,
+    isProcessing,
+    txStatus,
+    isUsed,
+  ]);
+
   return (
-    <DAVContext.Provider
-      value={{
-        ...data,
-        isLoading,
-        BurnClicked,
-        Claiming,
-        mintDAV,
-        BurnStateTokens,
-        claimAmount,
-        isClaiming,
-        claimBurnAmount,
-        AddYourToken,
-        buttonTextStates,
-        fetchData,
-        fetchStateHolding,
-        deployWithMetaMask,
-        DepositStateBack,
-        users,
-        isProcessingToken,
-        setProcessToken,
-        names,
-        Emojies,
-        TokenStatus,
-        isProcessing,
-        txStatus,
-        setTxStatus,
-        isUsed,
-      }}
-    >
+    <DAVContext.Provider value={contextValue}>
       {children}
     </DAVContext.Provider>
   );

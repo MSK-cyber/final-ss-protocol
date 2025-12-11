@@ -4,6 +4,7 @@ import "../Styles/SearchInfo.css";
 import MetaMaskIcon from "../assets/metamask-icon.png";
 import gecko from "../assets/gecko.svg";
 import { useSwapContract } from "../Functions/SwapContractFunctions";
+import { useTokenStore } from "../stores";
 import PropTypes from "prop-types";
 import { useContext, useEffect, useState, useMemo, useCallback, memo, useRef } from "react";
 import { TokensDetails } from "../data/TokensDetails";
@@ -22,10 +23,10 @@ import SwapComponent from "./Swap/SwapModel";
 import DexModal from "./Swap/DexModal";
 import { explorerUrls } from "../Constants/ContractAddresses";
 import { chainCurrencyMap } from "../../WalletConfig";
-import { calculatePlsValue, calculatePlsValueNumeric, formatWithCommas, truncateDecimals, calculateAmmPlsValueBoth, calculateStateAmmPlsValueNumeric } from "../Constants/Utils";
-import { isImageUrl, notifySuccess, PULSEX_ROUTER_ADDRESS, PULSEX_ROUTER_ABI } from "../Constants/Constants";
+import { formatWithCommas } from "../Constants/Utils";
+import { isImageUrl, notifySuccess } from "../Constants/Constants";
 import { generateIdenticon } from "../utils/identicon";
-import { ethers } from "ethers";
+import { useBackgroundAmmCalculator } from "../hooks/useBackgroundAmmCalculator";
 
 // Memoized token row component - OPTIMIZED: receives pre-calculated AMM value as prop
 const TokenRow = memo(({
@@ -414,11 +415,12 @@ const TokenRow = memo(({
 TokenRow.displayName = 'TokenRow';
 
 const DetailsInfo = ({ selectedToken }) => {
+  // Use selective store access instead of full context (reduces re-renders)
+  const pstateToPlsRatio = useTokenStore(state => state.pstateToPlsRatio);
   const {
     setDavAndStateIntoSwap,
     handleAddToken,
     DavAddress,
-    pstateToPlsRatio,
   } = useSwapContract();
 
   const chainId = useChainId();
@@ -430,22 +432,6 @@ const DetailsInfo = ({ selectedToken }) => {
   const { signer } = useContext(ContractContext);
   const TOKENS = useAllTokens();
   const tokenBalances = useTokenBalances(TOKENS, signer);
-  const [totalSum, setTotalSum] = useState("0");
-
-  // Initialize router contract for AMM calculations
-  const routerContract = useMemo(() => {
-    if (!signer || chainId !== 369) return null;
-    try {
-      return new ethers.Contract(
-        PULSEX_ROUTER_ADDRESS,
-        PULSEX_ROUTER_ABI,
-        signer.provider
-      );
-    } catch (error) {
-      console.error('Error initializing router contract:', error);
-      return null;
-    }
-  }, [signer, chainId]);
 
   // Memoized values
   const nativeSymbol = useMemo(() => chainCurrencyMap[chainId] || 'PLS', [chainId]);
@@ -549,95 +535,15 @@ const DetailsInfo = ({ selectedToken }) => {
       .map((token) => token.tokenName);
   }, [loading, filteredTokens, tokens]);
 
-  // Ref to track last calculation time to prevent too-frequent recalculations
-  const lastTotalCalcRef = useRef(0);
-  const totalCalcTimeoutRef = useRef(null);
-  
-  // Pre-calculated AMM values for all tokens - calculated once, passed to rows
-  const [ammValuesMap, setAmmValuesMap] = useState({});
-
-  // Memoized total sum AND per-token AMM values calculation
-  // This calculates ALL AMM values at once instead of per-row
-  useEffect(() => {
-    let mounted = true;
-    
-    // Debounce: don't recalculate more than once every 3 seconds
-    const now = Date.now();
-    const timeSinceLastCalc = now - lastTotalCalcRef.current;
-    const minInterval = 3000; // 3 seconds minimum between calculations (reduced from 10s)
-    
-    // Clear any pending timeout
-    if (totalCalcTimeoutRef.current) {
-      clearTimeout(totalCalcTimeoutRef.current);
-      totalCalcTimeoutRef.current = null;
-    }
-    
-    const calculateAllAmmValues = async () => {
-      if (!routerContract || !TOKENS || !tokenBalances || !sortedTokens.length) {
-        return;
-      }
-
-      try {
-        lastTotalCalcRef.current = Date.now();
-        
-        // Calculate AMM values for ALL tokens at once using the combined function (2x faster)
-        const tokenPromises = sortedTokens.map(async (token) => {
-          try {
-            const { numeric, display } = await calculateAmmPlsValueBoth(token, tokenBalances, routerContract, TOKENS, chainId);
-            return { tokenName: token.tokenName, numericValue: numeric, displayValue: display };
-          } catch {
-            return { tokenName: token.tokenName, numericValue: 0, displayValue: "N/A" };
-          }
-        });
-        
-        const results = await Promise.all(tokenPromises);
-        
-        // Build the values map for per-row display
-        const newAmmMap = {};
-        let tokensPls = 0;
-        
-        for (const result of results) {
-          newAmmMap[result.tokenName] = result.displayValue;
-          tokensPls += result.numericValue;
-        }
-
-        // Add STATE holdings converted via AMM
-        const stateBalRaw = tokenBalances?.["STATE"];
-        const statePls = await calculateStateAmmPlsValueNumeric(stateBalRaw, routerContract, TOKENS, chainId);
-        const stateResult = await calculateAmmPlsValueBoth({ tokenName: "STATE" }, tokenBalances, routerContract, TOKENS, chainId);
-        newAmmMap["STATE"] = stateResult.display;
-
-        const total = tokensPls + statePls;
-        
-        if (mounted) {
-          setAmmValuesMap(newAmmMap);
-          setTotalSum(formatWithCommas(total.toFixed(0)));
-        }
-      } catch (error) {
-        console.error('Error calculating AMM values:', error);
-        if (mounted) {
-          setTotalSum("Error");
-        }
-      }
-    };
-
-    // If we calculated recently, schedule a delayed calculation
-    if (timeSinceLastCalc < minInterval) {
-      totalCalcTimeoutRef.current = setTimeout(() => {
-        if (mounted) calculateAllAmmValues();
-      }, minInterval - timeSinceLastCalc);
-    } else {
-      // Otherwise calculate immediately
-      calculateAllAmmValues();
-    }
-    
-    return () => { 
-      mounted = false;
-      if (totalCalcTimeoutRef.current) {
-        clearTimeout(totalCalcTimeoutRef.current);
-      }
-    };
-  }, [sortedTokens, tokenBalances, routerContract, TOKENS, chainId]);
+  // ========== BACKGROUND AMM CALCULATIONS ==========
+  // All AMM calculations now run in a Web Worker (separate thread)
+  // UI stays responsive, values update every 30 seconds in background
+  const { ammValuesMap, totalSum, isCalculating } = useBackgroundAmmCalculator(
+    sortedTokens,
+    tokenBalances,
+    chainId,
+    TOKENS
+  );
 
   // Optimized search handler
   const handleSearch = useCallback((e) => {
@@ -686,9 +592,22 @@ const DetailsInfo = ({ selectedToken }) => {
                     {loading ? (
                       <IOSpinner />
                     ) : (
-                      <>
+                      <span style={{ position: 'relative' }}>
                         {`${totalSum} ${nativeSymbol}`}
-                      </>
+                        {isCalculating && (
+                          <span 
+                            style={{ 
+                              marginLeft: '4px', 
+                              fontSize: '0.7em', 
+                              opacity: 0.6,
+                              animation: 'pulse 1s infinite'
+                            }}
+                            title="Updating values in background..."
+                          >
+                            ⟳
+                          </span>
+                        )}
+                      </span>
                     )}
                   </th>
                   <th className="text-center">DEX</th>

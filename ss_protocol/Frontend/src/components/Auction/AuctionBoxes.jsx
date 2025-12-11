@@ -2,6 +2,7 @@ import React, { useMemo, useContext, useState, useEffect, useCallback, useRef } 
 import { ethers } from "ethers";
 import "../../Styles/AuctionBoxes.css";
 import { useSwapContract } from "../../Functions/SwapContractFunctions";
+import { useAuctionStore, useTokenStore, useUserStore } from "../../stores";
 import { useAuctionTokens } from "../../data/auctionTokenData";
 import { formatWithCommas } from "../../Constants/Utils";
 import { useAccount, useChainId } from "wagmi";
@@ -17,9 +18,28 @@ import NormalAuctionBox from "./NormalAuctionBox";
 import ReverseAuctionBox from "./ReverseAuctionBox";
 
 const AuctionBoxes = () => {
+		// Use Zustand stores for data that changes frequently (reduces re-renders)
+		const todayTokenAddress = useAuctionStore(state => state.todayTokenAddress) || "";
+		const todayTokenSymbol = useAuctionStore(state => state.todayTokenSymbol) || "";
+		const todayTokenName = useAuctionStore(state => state.todayTokenName) || "";
+		const todayTokenDecimals = useAuctionStore(state => state.todayTokenDecimals) || 18;
+		const reverseWindowActive = useAuctionStore(state => state.reverseWindowActive);
+		const AuctionTime = useAuctionStore(state => state.auctionTime);
+		
+		const isReversed = useTokenStore(state => state.isReversed) || {};
+		const IsAuctionActive = useTokenStore(state => state.isAuctionActive) || {};
+		const TokenRatio = useTokenStore(state => state.tokenRatios) || {};
+		const tokenMap = useTokenStore(state => state.tokenMap);
+		
+		const userHashSwapped = useUserStore(state => state.userHasSwapped) || {};
+		const userHasBurned = useUserStore(state => state.userHasBurned) || {};
+		const userReverseStep1 = useUserStore(state => state.userReverseStep1) || {};
+		const userReverseStep2 = useUserStore(state => state.userReverseStep2) || {};
+		const AirdropClaimed = useUserStore(state => state.userHasAirdropClaimed) || {};
+		const reverseStateMap = useUserStore(state => state.reverseStateMap) || {};
+		
+		// Functions still need to come from context
 		const {
-			isReversed = {},
-			IsAuctionActive = {},
 			AirDropAmount = {},
 			getAirdropAmount,
 			handleDexTokenSwap,
@@ -29,26 +49,11 @@ const AuctionBoxes = () => {
 			CheckMintBalance,
 			handleAddToken,
 			SwapTokens,
-			AuctionTime,
 			InputAmount,
 			OutPutAmount,
 			getInputAmount,
 			getOutPutAmount,
-			TokenRatio,
 			getTokenRatio,
-			reverseStateMap = {},
-			tokenMap,
-			AirdropClaimed = {},
-			userHashSwapped = {},
-			userHasBurned = {},
-			userReverseStep1 = {},
-			userReverseStep2 = {},
-			// Use centralized today's token data from SwapContractFunctions
-			todayTokenAddress = "",
-			todayTokenSymbol = "",
-			todayTokenName = "",
-			todayTokenDecimals = 18,
-			reverseWindowActive = null,
 		} = useSwapContract();
 		const { davHolds = "0", davExpireHolds = "0" } = useDAvContract() || {};
 		const { tokens } = useAuctionTokens();
@@ -708,12 +713,15 @@ useEffect(() => {
 
 	const doRatioSwap = useCallback(async () => {
 			if (!address || busy) { if (!address) toast.error("Connect your wallet to continue"); return; }
-			toast("Starting Ratio Swap…", { position: 'top-center' });
+			const toastId = toast.loading("Starting Ratio Swap…", { position: 'top-center' });
 			setBusy(true);
 			try {
 					const tokenAddress = selected ? (TOKENS[selected.id]?.address || selected.address) : undefined;
 					const id = selected?.id || 'GLOBAL';
 					await performRatioSwap(id, selected?.id, tokenAddress);
+					toast.dismiss(toastId);
+			} catch (e) {
+					toast.dismiss(toastId);
 			} finally { setBusy(false); }
 		}, [address, busy, selected, TOKENS, performRatioSwap]);
 
@@ -721,27 +729,36 @@ useEffect(() => {
 			if (!selected || !address || busy) { if (!address) toast.error("Connect your wallet to continue"); if (!selected) toast.error("No active token selected"); return; }
 			const tokenOutAddress = TOKENS[selected.id]?.address;
 			if (!tokenOutAddress) { toast.error("Token address not found for swap"); return; }
+			const toastId = toast.loading("Starting DEX Swap…", { position: 'top-center' });
 			setBusy(true);
-		   try { await handleDexTokenSwap(
-				selected.id,
-			   String(stateOutForDex || 0),
-				signer,
-				address,
-				tokenOutAddress,
-				ERC20_ABI,
-				stateAddress,
-			); } finally { setBusy(false); }
+		   try { 
+				await handleDexTokenSwap(
+					selected.id,
+				   String(stateOutForDex || 0),
+					signer,
+					address,
+					tokenOutAddress,
+					ERC20_ABI,
+					stateAddress,
+				);
+				toast.dismiss(toastId);
+			} catch (e) {
+				toast.dismiss(toastId);
+			} finally { setBusy(false); }
 		}, [selected, address, busy, TOKENS, handleDexTokenSwap, stateOutForDex, signer, stateAddress]);
 
 		// Step 3 via contract pool swap (swapTokens)
 		const doContractSwap = useCallback(async () => {
 			if (!address || busy) { if (!address) toast.error("Connect your wallet to continue"); return; }
-									toast("Starting Swap…", { position: 'top-center' });
+			const toastId = toast.loading("Starting Swap…", { position: 'top-center' });
 			setBusy(true);
 				try {
 					const tokenAddress = selected ? (TOKENS[selected.id]?.address || selected.address) : undefined;
 					const id = selected?.id || 'GLOBAL';
 					await SwapTokens(id, selected?.id, tokenAddress);
+					toast.dismiss(toastId);
+				} catch (e) {
+					toast.dismiss(toastId);
 				} finally { setBusy(false); }
 		}, [address, busy, selected, TOKENS, SwapTokens]);
 
@@ -787,7 +804,7 @@ useEffect(() => {
 						// OPTIMIZED: Wrap in useCallback
 						const doReverseSwap = useCallback(async () => {
 							if (!address || busy) { if (!address) toast.error("Connect your wallet to continue"); return; }
-								toast("Starting Reverse Swap…", { position: 'top-center' });
+							const toastId = toast.loading("Starting Reverse Swap…", { position: 'top-center' });
 							setBusy(true);
 							try {
 																// Use the live token-of-day when reverse is active to stay aligned with on-chain window
@@ -796,6 +813,9 @@ useEffect(() => {
 															// Silent switch: avoid showing a toast in the corner when overriding selection
 								const id = selected?.id || 'GLOBAL';
 								await performReverseSwapStep1(id, selected?.id, tokenAddress);
+								toast.dismiss(toastId);
+							} catch (e) {
+								toast.dismiss(toastId);
 							} finally { setBusy(false); }
 						}, [address, busy, selected, TOKENS, reverseNow, todayTokenAddress, performReverseSwapStep1]);
 

@@ -3,7 +3,7 @@ import "../Styles/DataTable.css";
 import MetaMaskIcon from "../assets/metamask-icon.png";
 import { useLocation } from "react-router-dom";
 import { useSwapContract } from "../Functions/SwapContractFunctions";
-import { useEffect, useState, useMemo, useContext, useRef } from "react";
+import { useEffect, useState, useMemo, useContext, useRef, useCallback } from "react";
 import { useAuctionTokens } from "../data/auctionTokenData";
 import { useDAvContract } from "../Functions/DavTokenFunctions";
 import { useAccount, useChainId } from "wagmi";
@@ -16,6 +16,8 @@ import { ContractContext } from "../Functions/ContractInitialize";
 import toast from "react-hot-toast";
 import { AddingTokenSteps, ERC20_ABI, isImageUrl } from "../Constants/Constants";
 import { formatCountdown, formatTimeVerbose, formatWithCommas } from "../Constants/Utils";
+// Optimized: Use Zustand stores for selective subscriptions
+import { useAuctionStore, useUserStore, useUIStore, useTokenStore } from "../stores";
 
 const DataTable = () => {
   const chainId = useChainId();
@@ -29,23 +31,27 @@ const DataTable = () => {
     pendingToken,
   } = useDAvContract();
   const { address, isConnected } = useAccount();
+  
+  // Optimized: Use selective store subscriptions for static data
+  const swappingStates = useUIStore(state => state.swappingStates);
+  const buttonTextStates = useUIStore(state => state.buttonTextStates);
+  const DexswappingStates = useUIStore(state => state.DexswappingStates);
+  const txStatusForAdding = useUIStore(state => state.txStatusForAdding);
+  const isCliamProcessing = useUIStore(state => state.isCliamProcessing);
+  const AirDropAmount = useAuctionStore(state => state.AirDropAmount);
+  const tokenMap = useTokenStore(state => state.tokenMap);
+  const CurrentCycleCount = useAuctionStore(state => state.CurrentCycleCount);
+  
+  // Keep functions from context (they don't cause re-renders)
   const {
-    swappingStates,
-    buttonTextStates,
-    AirDropAmount,
     setTxStatusForAdding,
-    txStatusForAdding,
     AddTokenIntoSwapContract,
     isTokenSupporteed,
     renounceTokenContract,
     CheckMintBalance,
-    isCliamProcessing,
     fetchUserTokenAddresses,
-    CurrentCycleCount,
     handleAddToken,
-    tokenMap,
     handleDexTokenSwap,
-    DexswappingStates,
     giveRewardForAirdrop,
   } = useSwapContract();
 
